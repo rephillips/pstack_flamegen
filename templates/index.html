@@ -217,6 +217,14 @@
         <span class="stat"><strong id="statFiles">0</strong> files processed</span>
         <span class="stat"><strong id="statStacks">0</strong> total stacks</span>
         <span class="stat"><strong id="statUnique">0</strong> unique stacks</span>
+        <span class="stat" id="statSkipped" style="display:none"><strong id="statSkippedCount">0</strong> .err files skipped</span>
+    </div>
+
+    <div class="stats-bar" id="timeBar" style="display:none; border-top:0; padding-top:0;">
+        <span class="stat">Earliest: <strong id="timeEarliest">—</strong></span>
+        <span class="stat">Latest: <strong id="timeLatest">—</strong></span>
+        <span class="stat">Duration: <strong id="timeDuration">—</strong></span>
+        <span class="stat">Samples: <strong id="timeSamples">—</strong></span>
     </div>
 
     <div class="toolbar" id="toolbar">
@@ -328,6 +336,32 @@
                     document.getElementById('statsBar').classList.add('visible');
                     document.getElementById('toolbar').classList.add('visible');
 
+                    // Show skipped .err files count
+                    if (data.stats.skipped_err_files > 0) {
+                        document.getElementById('statSkippedCount').textContent = data.stats.skipped_err_files;
+                        document.getElementById('statSkipped').style.display = 'inline';
+                    }
+
+                    // Show time range if available
+                    if (data.time_range) {
+                        document.getElementById('timeEarliest').textContent = data.time_range.earliest;
+                        document.getElementById('timeLatest').textContent = data.time_range.latest;
+                        document.getElementById('timeSamples').textContent = data.time_range.sample_count.toLocaleString();
+
+                        // Format duration
+                        const secs = data.time_range.duration_seconds;
+                        let durStr;
+                        if (secs < 60) {
+                            durStr = secs + 's';
+                        } else if (secs < 3600) {
+                            durStr = Math.floor(secs / 60) + 'm ' + (secs % 60) + 's';
+                        } else {
+                            durStr = Math.floor(secs / 3600) + 'h ' + Math.floor((secs % 3600) / 60) + 'm ' + (secs % 60) + 's';
+                        }
+                        document.getElementById('timeDuration').textContent = durStr;
+                        document.getElementById('timeBar').style.display = 'flex';
+                    }
+
                     // Render flamegraph
                     renderFlamegraph(data.data);
                 })
@@ -411,6 +445,8 @@
             document.getElementById('statsBar').classList.remove('visible');
             document.getElementById('toolbar').classList.remove('visible');
             document.getElementById('errorMsg').classList.remove('visible');
+            document.getElementById('timeBar').style.display = 'none';
+            document.getElementById('statSkipped').style.display = 'none';
             document.getElementById('dropZone').style.display = 'flex';
             document.getElementById('searchInput').value = '';
             document.getElementById('fileInput').value = '';

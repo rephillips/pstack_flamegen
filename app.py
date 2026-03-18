@@ -11,6 +11,7 @@ import os
 import re
 import zipfile
 from collections import Counter
+from datetime import datetime, timezone
 from flask import Flask, render_template, request, jsonify
 
 app = Flask(__name__)
@@ -170,6 +171,50 @@ def folded_to_d3_hierarchy(folded_data):
     return root
 
 
+def parse_timestamp_from_filename(filename):
+    """
+    Extract timestamp from collect-stacks.sh output filenames.
+
+    Filename formats:
+    - stack-2025-09-26T17h58m03s178544439ns+0000.out
+    - proc-stack-2025-09-26T17h58m03s178544439ns+0000.out
+    - proc-status-2025-09-26T17h58m03s178544439ns+0000.out
+
+    Returns a datetime object or None if no timestamp found.
+    """
+    # Extract just the basename (handle paths from ZIPs)
+    basename = os.path.basename(filename)
+
+    # Match the timestamp pattern: YYYY-MM-DDTHHhMMmSSsNNNNNNNNNns+ZZZZ
+    m = re.search(
+        r'(\d{4})-(\d{2})-(\d{2})T(\d{2})h(\d{2})m(\d{2})s(\d+)ns([+-]\d{4})',
+        basename
+    )
+    if not m:
+        return None
+
+    year, month, day = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    hour, minute, second = int(m.group(4)), int(m.group(5)), int(m.group(6))
+    tz_str = m.group(8)
+
+    # Parse timezone offset
+    tz_sign = 1 if tz_str[0] == '+' else -1
+    tz_hours = int(tz_str[1:3])
+    tz_minutes = int(tz_str[3:5])
+    from datetime import timedelta
+    tz_offset = timezone(timedelta(hours=tz_sign * tz_hours, minutes=tz_sign * tz_minutes))
+
+    try:
+        return datetime(year, month, day, hour, minute, second, tzinfo=tz_offset)
+    except (ValueError, OverflowError):
+        return None
+
+
+def is_stack_file(filename):
+    """Check if a filename is a .out file (not .err)."""
+    return filename.lower().endswith('.out')
+
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -184,6 +229,8 @@ def upload():
 
     all_stacks = []
     file_count = 0
+    skipped_err = 0
+    timestamps = []
 
     for f in files:
         filename = f.filename or ''
@@ -196,32 +243,64 @@ def upload():
                     for name in zf.namelist():
                         if name.endswith('/'):
                             continue  # skip directories
+                        # Skip .err files
+                        if not is_stack_file(name):
+                            skipped_err += 1
+                            continue
                         try:
                             text = zf.read(name).decode('utf-8', errors='replace')
                             stacks = parse_pstack_output(text)
                             if stacks:
                                 all_stacks.extend(stacks)
                                 file_count += 1
+                                # Extract timestamp from filename
+                                ts = parse_timestamp_from_filename(name)
+                                if ts:
+                                    timestamps.append(ts)
                         except Exception:
                             continue
             except zipfile.BadZipFile:
                 return jsonify({"error": f"Invalid ZIP file: {filename}"}), 400
         else:
-            # Regular text file
+            # Skip .err files
+            if not is_stack_file(filename):
+                skipped_err += 1
+                continue
+
+            # Regular .out file
             try:
                 text = f.read().decode('utf-8', errors='replace')
                 stacks = parse_pstack_output(text)
                 if stacks:
                     all_stacks.extend(stacks)
                     file_count += 1
+                    # Extract timestamp from filename
+                    ts = parse_timestamp_from_filename(filename)
+                    if ts:
+                        timestamps.append(ts)
             except Exception as e:
                 return jsonify({"error": f"Error reading {filename}: {str(e)}"}), 400
 
     if not all_stacks:
-        return jsonify({"error": "No valid stack traces found in uploaded files"}), 400
+        return jsonify({"error": "No valid stack traces found in uploaded .out files. "
+                        f"({skipped_err} .err files were skipped)"}), 400
 
     folded = stacks_to_folded(all_stacks)
     hierarchy = folded_to_d3_hierarchy(folded)
+
+    # Build time range info
+    time_range = None
+    if timestamps:
+        timestamps.sort()
+        earliest = timestamps[0]
+        latest = timestamps[-1]
+        duration = latest - earliest
+        time_range = {
+            "earliest": earliest.strftime('%Y-%m-%d %H:%M:%S %Z'),
+            "latest": latest.strftime('%Y-%m-%d %H:%M:%S %Z'),
+            "duration_seconds": int(duration.total_seconds()),
+            "sample_count": len(timestamps),
+        }
 
     return jsonify({
         "data": hierarchy,
@@ -229,7 +308,9 @@ def upload():
             "files": file_count,
             "total_stacks": len(all_stacks),
             "unique_stacks": len(folded),
-        }
+            "skipped_err_files": skipped_err,
+        },
+        "time_range": time_range,
     })
 
 
