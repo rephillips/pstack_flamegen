@@ -31,8 +31,8 @@
             --error-text: #ff8a80;
             --status-bg: #111;
             --status-border: #333;
-            --flamegraph-bg: #fff;
-            --flamegraph-stroke: #333;
+            --flamegraph-bg: #1a1a2e;
+            --flamegraph-stroke: #444;
             --tooltip-bg: #222;
             --tooltip-text: #eee;
             --tooltip-border: #444;
@@ -224,6 +224,7 @@
 
         #flamegraph-container.visible { display: block; }
         #flamegraph-container .d3-flame-graph rect { stroke: var(--flamegraph-stroke); stroke-width: 0.5px; }
+        #flamegraph-container .d3-flame-graph-label { fill: var(--text-primary) !important; }
 
         .loading {
             display: none;
