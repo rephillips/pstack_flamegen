@@ -44,6 +44,73 @@ Open your browser to **http://localhost:5050**
 7. **Download SVG** — click Download SVG to save the flamegraph
 8. **New Upload** — click New Upload to start over with different files
 
+## Collecting Pstacks on Splunk Enterprise
+
+This repo includes the `collect-stacks.sh` script for collecting pstack samples from the main splunkd process.
+
+### Steps
+
+1. **Copy the script to the Splunk host:**
+
+   ```bash
+   cd /opt/splunk/bin
+   # Copy collect-stacks.sh from this repo to the host
+   vi collect-stacks.sh
+   ```
+
+2. **Give the file executable permissions:**
+
+   ```bash
+   chmod +x collect-stacks.sh
+   ```
+
+3. **Install elfutils** (not required on Splunk Cloud):
+
+   ```bash
+   yum install elfutils
+   ```
+
+4. **Create the output directory:**
+
+   ```bash
+   cd /tmp
+   mkdir splunk
+   ```
+
+   The default output directory in the script is `/tmp/splunk`.
+
+5. **Execute the script:**
+
+   ```bash
+   ./collect-stacks.sh
+   ```
+
+   The default script parameters are to collect a stack every 0.5 seconds, 1000 times. These defaults are sufficient.
+
+6. **Once the script finishes, tar the directory created inside `/tmp/splunk`:**
+
+   ```bash
+   cd /tmp/splunk
+   tar -zcvf archive-name.tar.gz source-directory-name
+   ```
+
+   > **Note:** It is normal to see `.err` files for each `.out` file.
+
+7. **SCP from cloud instance to local machine:**
+
+   ```bash
+   scp <user>@<host>:/tmp/<archive-name>.tar.gz .
+   ```
+
+8. **Generate a diag once pstack collection is finished** (not required on Splunk Cloud):
+
+   ```bash
+   cd $SPLUNK_HOME/bin
+   ./splunk diag
+   ```
+
+9. **Upload the `.out` files to the Flamegraph Generator** to visualize the results.
+
 ## Sample Data
 
 The `sample_data/` directory contains 500 synthetic pstack samples modeled after Splunk Enterprise thread stacks. Use these to test the app:
