@@ -181,6 +181,162 @@
         .progress-text { color: #aaa; font-size: 13px; margin-top: 8px; }
 
         input[type="file"] { display: none; }
+
+        .status-bar {
+            display: none;
+            background: #111;
+            border-top: 1px solid #333;
+            padding: 8px 24px;
+            font-size: 13px;
+            font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+            color: #ccc;
+            position: sticky;
+            bottom: 0;
+            z-index: 100;
+        }
+
+        .status-bar.visible { display: flex; gap: 20px; align-items: center; }
+
+        .status-bar .func-name { color: #00c853; font-weight: 600; }
+        .status-bar .samples { color: #ffab40; }
+        .status-bar .pct { color: #40c4ff; }
+
+        .search-result-bar {
+            display: none;
+            background: #1a2742;
+            border-bottom: 1px solid #0f3460;
+            padding: 8px 24px;
+            font-size: 13px;
+            color: #aaa;
+        }
+
+        .search-result-bar.visible { display: block; }
+        .search-result-bar strong { color: #ffab40; }
+
+        .analysis-panel {
+            background: #16213e;
+            padding: 24px;
+            color: #e0e0e0;
+        }
+
+        .analysis-panel h3 {
+            color: #00c853;
+            font-size: 18px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid #0f3460;
+            padding-bottom: 8px;
+        }
+
+        .analysis-panel h4 {
+            color: #aaa;
+            font-size: 14px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .analysis-section { margin-bottom: 20px; }
+
+        .analysis-summary {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 8px;
+        }
+
+        .analysis-badge {
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .analysis-badge.active { background: #1b5e20; color: #69f0ae; }
+        .analysis-badge.idle { background: #0d47a1; color: #82b1ff; }
+
+        .analysis-table {
+            width: 100%;
+            max-width: 700px;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .analysis-table th {
+            text-align: left;
+            color: #888;
+            padding: 6px 12px;
+            border-bottom: 1px solid #0f3460;
+            font-weight: 500;
+        }
+
+        .analysis-table td {
+            padding: 5px 12px;
+            border-bottom: 1px solid #0a1a30;
+        }
+
+        .analysis-table .func-col {
+            font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+            color: #ffab40;
+            font-size: 12px;
+        }
+
+        .analysis-table tr:hover { background: #1a2742; }
+
+        .guide-panel {
+            background: #1a1a2e;
+            padding: 24px;
+            color: #ccc;
+            border-top: 1px solid #0f3460;
+        }
+
+        .guide-panel h3 {
+            color: #00c853;
+            font-size: 18px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid #0f3460;
+            padding-bottom: 8px;
+            cursor: pointer;
+        }
+
+        .guide-panel h3:hover { color: #69f0ae; }
+        .guide-panel h3::after { content: ' ▸'; font-size: 14px; }
+        .guide-panel h3.expanded::after { content: ' ▾'; }
+
+        .guide-content {
+            display: none;
+            font-size: 14px;
+            line-height: 1.7;
+        }
+
+        .guide-content.visible { display: block; }
+
+        .guide-content h4 {
+            color: #aaa;
+            margin: 16px 0 8px;
+            font-size: 14px;
+        }
+
+        .guide-content ul {
+            margin-left: 20px;
+            margin-bottom: 12px;
+        }
+
+        .guide-content li { margin-bottom: 4px; }
+
+        .guide-content code {
+            background: #0f3460;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: #ffab40;
+        }
+
+        .guide-content .color-swatch {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+            vertical-align: middle;
+            margin-right: 4px;
+        }
     </style>
 </head>
 <body>
@@ -235,7 +391,15 @@
 
     <div class="error-msg" id="errorMsg"></div>
 
+    <div class="search-result-bar" id="searchResultBar"></div>
+
     <div id="flamegraph-container"></div>
+
+    <div class="status-bar" id="statusBar">
+        <span class="func-name" id="statusFunc">—</span>
+        <span class="samples" id="statusSamples"></span>
+        <span class="pct" id="statusPct"></span>
+    </div>
 
     <input type="file" id="fileInput" multiple>
 
@@ -616,13 +780,34 @@
             if (e.dataTransfer.files.length > 0) uploadFiles(e.dataTransfer.files);
         });
 
+        let totalSamples = 0;
+
         document.getElementById('searchInput').addEventListener('input', (e) => {
             if (flameChart) {
                 const term = e.target.value.trim();
+                const searchBar = document.getElementById('searchResultBar');
                 if (term) {
                     flameChart.search(term);
+                    // Calculate cumulative percentage of matching frames
+                    setTimeout(() => {
+                        const matched = document.querySelectorAll('#flamegraph-container rect[style*="opacity: 1"]');
+                        const faded = document.querySelectorAll('#flamegraph-container rect[style*="opacity: 0.4"]');
+                        if (matched.length > 0 && totalSamples > 0) {
+                            // Sum up the values of matched leaf nodes
+                            let matchedSamples = 0;
+                            matched.forEach(rect => {
+                                const d = d3.select(rect).datum();
+                                if (d && d.data) matchedSamples += (d.data.value || d.value || 0);
+                            });
+                            // Use search results from d3-flame-graph
+                            const pct = ((matchedSamples / totalSamples) * 100).toFixed(1);
+                            searchBar.innerHTML = `Search: <strong>"${term}"</strong> — ${matched.length} matching frames`;
+                            searchBar.classList.add('visible');
+                        }
+                    }, 100);
                 } else {
                     flameChart.clear();
+                    searchBar.classList.remove('visible');
                 }
             }
         });
@@ -691,18 +876,45 @@
             container.innerHTML = '';
             container.classList.add('visible');
 
+            totalSamples = data.value || 0;
+
+            const statusBar = document.getElementById('statusBar');
+            statusBar.classList.add('visible');
+
             const width = container.clientWidth || window.innerWidth;
+
+            // Custom tooltip showing name, samples, and percentage
+            const tip = flamegraph.tooltip.defaultFlamegraphTooltip()
+                .html(function(d) {
+                    const name = d.data.name || d.name || '?';
+                    const value = d.data.value || d.value || 0;
+                    const pct = totalSamples > 0 ? ((value / totalSamples) * 100).toFixed(2) : '0.00';
+                    return `<b>${name}</b><br>${value.toLocaleString()} samples (${pct}% of total)`;
+                });
 
             flameChart = flamegraph()
                 .width(width)
-                .cellHeight(20)
+                .cellHeight(22)
                 .transitionDuration(500)
                 .inverted(false)
                 .sort(true)
                 .title('')
                 .selfValue(false)
+                .tooltip(tip)
+                .onClick(function(d) {
+                    // Update status bar on click/zoom
+                    updateStatusBar(d);
+                })
                 .setColorMapper(function(d) {
                     if (!d.parent) return '#666';
+                    const name = (d.data && d.data.name) || '';
+                    // Color by function type for better readability
+                    if (/^(pthread_|__pthread)/.test(name)) return '#5c6bc0';  // purple for pthread
+                    if (/^(malloc|free|realloc|calloc|mmap|brk)/.test(name)) return '#ef5350';  // red for memory
+                    if (/^(read|write|send|recv|poll|epoll|select|accept|connect|socket)/.test(name)) return '#42a5f5';  // blue for I/O
+                    if (/^(SSL_|OpenSSL|TLS)/.test(name)) return '#26c6da';  // cyan for SSL
+                    if (/^(std::)/.test(name)) return '#ab47bc';  // purple for stdlib
+                    // Default warm colors
                     const depth = d.depth || 0;
                     const r = 200 + Math.floor(Math.random() * 55);
                     const g = 80 + Math.floor(Math.random() * 80 + depth * 3);
@@ -714,6 +926,16 @@
                 .datum(data)
                 .call(flameChart);
 
+            // Add mouseover handler for status bar
+            d3.select('#flamegraph-container').selectAll('rect').on('mouseover', function() {
+                const d = d3.select(this).datum();
+                if (d) updateStatusBar(d);
+            });
+
+            // Show analysis panel and guide
+            showAnalysis(data);
+            showGuide();
+
             window.onresize = () => {
                 if (flameChart) {
                     flameChart.width(container.clientWidth || window.innerWidth);
@@ -722,6 +944,197 @@
                         .call(flameChart);
                 }
             };
+        }
+
+        function updateStatusBar(d) {
+            const data = d.data || d;
+            const name = data.name || '?';
+            const value = data.value || 0;
+            const pct = totalSamples > 0 ? ((value / totalSamples) * 100).toFixed(2) : '0.00';
+
+            document.getElementById('statusFunc').textContent = name;
+            document.getElementById('statusSamples').textContent = `${value.toLocaleString()} samples`;
+            document.getElementById('statusPct').textContent = `(${pct}% of total)`;
+        }
+
+        // ========== ANALYSIS ==========
+
+        function showAnalysis(hierarchy) {
+            // Collect all leaf nodes and their values
+            const functionStats = {};
+
+            function walk(node, depth) {
+                const name = node.name || '?';
+                const value = node.value || 0;
+                const isLeaf = !node.children || node.children.length === 0;
+
+                if (!functionStats[name]) {
+                    functionStats[name] = { total: 0, selfTime: 0, appearances: 0, maxDepth: 0 };
+                }
+                functionStats[name].total += value;
+                functionStats[name].appearances++;
+                functionStats[name].maxDepth = Math.max(functionStats[name].maxDepth, depth);
+
+                if (isLeaf) {
+                    functionStats[name].selfTime += value;
+                }
+
+                if (node.children) {
+                    for (const child of node.children) {
+                        walk(child, depth + 1);
+                    }
+                }
+            }
+            walk(hierarchy, 0);
+
+            // Top functions by self time (on-CPU)
+            const bySelfTime = Object.entries(functionStats)
+                .filter(([name]) => name !== 'all')
+                .sort((a, b) => b[1].selfTime - a[1].selfTime)
+                .slice(0, 10);
+
+            // Identify wait/idle functions
+            const waitPatterns = /^(pthread_cond_wait|pthread_cond_timedwait|poll|epoll_wait|select|nanosleep|futex_wait|__poll|sleep|usleep|pause|sigsuspend|recv|recvfrom|accept|read|inotify_read)$/;
+            const waitFuncs = bySelfTime.filter(([name]) => waitPatterns.test(name));
+            const activeFuncs = bySelfTime.filter(([name]) => !waitPatterns.test(name));
+
+            // Build analysis HTML
+            let html = '<div class="analysis-panel">';
+            html += '<h3>Stack Analysis</h3>';
+
+            // Summary
+            const waitPct = waitFuncs.reduce((s, [, v]) => s + v.selfTime, 0) / totalSamples * 100;
+            const activePct = 100 - waitPct;
+            html += '<div class="analysis-section">';
+            html += `<div class="analysis-summary">`;
+            html += `<span class="analysis-badge active">On-CPU: ${activePct.toFixed(1)}%</span>`;
+            html += `<span class="analysis-badge idle">Waiting/Idle: ${waitPct.toFixed(1)}%</span>`;
+            html += `</div>`;
+            html += '</div>';
+
+            // Top active functions
+            if (activeFuncs.length > 0) {
+                html += '<div class="analysis-section">';
+                html += '<h4>Top Active Functions (on-CPU)</h4>';
+                html += '<table class="analysis-table"><tr><th>Function</th><th>Self Samples</th><th>% of Total</th></tr>';
+                for (const [name, stats] of activeFuncs.slice(0, 8)) {
+                    const pct = (stats.selfTime / totalSamples * 100).toFixed(1);
+                    html += `<tr><td class="func-col">${escapeHtml(name)}</td><td>${stats.selfTime.toLocaleString()}</td><td>${pct}%</td></tr>`;
+                }
+                html += '</table></div>';
+            }
+
+            // Wait functions
+            if (waitFuncs.length > 0) {
+                html += '<div class="analysis-section">';
+                html += '<h4>Wait/Idle Functions</h4>';
+                html += '<table class="analysis-table"><tr><th>Function</th><th>Self Samples</th><th>% of Total</th></tr>';
+                for (const [name, stats] of waitFuncs) {
+                    const pct = (stats.selfTime / totalSamples * 100).toFixed(1);
+                    html += `<tr><td class="func-col">${escapeHtml(name)}</td><td>${stats.selfTime.toLocaleString()}</td><td>${pct}%</td></tr>`;
+                }
+                html += '</table></div>';
+            }
+
+            // Deepest stacks
+            const deepest = Object.entries(functionStats)
+                .filter(([name]) => name !== 'all')
+                .sort((a, b) => b[1].maxDepth - a[1].maxDepth)
+                .slice(0, 5);
+
+            if (deepest.length > 0) {
+                html += '<div class="analysis-section">';
+                html += '<h4>Deepest Call Stacks</h4>';
+                html += '<table class="analysis-table"><tr><th>Function</th><th>Max Depth</th></tr>';
+                for (const [name, stats] of deepest) {
+                    html += `<tr><td class="func-col">${escapeHtml(name)}</td><td>${stats.maxDepth}</td></tr>`;
+                }
+                html += '</table></div>';
+            }
+
+            html += '</div>';
+
+            // Insert analysis panel
+            let panel = document.getElementById('analysisPanel');
+            if (!panel) {
+                panel = document.createElement('div');
+                panel.id = 'analysisPanel';
+                document.getElementById('flamegraph-container').after(panel);
+            }
+            panel.innerHTML = html;
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        function showGuide() {
+            let guide = document.getElementById('guidePanel');
+            if (!guide) {
+                guide = document.createElement('div');
+                guide.id = 'guidePanel';
+                const panel = document.getElementById('analysisPanel');
+                if (panel) panel.after(guide);
+                else document.getElementById('flamegraph-container').after(guide);
+            }
+
+            guide.innerHTML = `
+            <div class="guide-panel">
+                <h3 id="guideToggle" onclick="toggleGuide()">How to Read This Flamegraph</h3>
+                <div class="guide-content" id="guideContent">
+                    <h4>What is a Flamegraph?</h4>
+                    <ul>
+                        <li>Each <b>horizontal bar</b> represents a function in a call stack</li>
+                        <li>The <b>width</b> of a bar shows how often that function appeared in the collected samples — wider = more frequent</li>
+                        <li>The <b>y-axis</b> shows stack depth: the bottom is the entry point (e.g., <code>main</code>), going up to the leaf functions at the top</li>
+                        <li>The <b>x-axis is NOT time</b> — it is sorted alphabetically to maximize merging of similar stacks</li>
+                    </ul>
+
+                    <h4>How to Interpret</h4>
+                    <ul>
+                        <li><b>Wide bars at the top</b> = functions where the CPU is spending the most time (hot functions)</li>
+                        <li><b>Tall narrow towers</b> = deep call stacks that are infrequent</li>
+                        <li><b>Flat wide plateaus</b> = many threads/samples sharing the same call path</li>
+                        <li>Look for <b>unexpected wide bars</b> — these may indicate performance bottlenecks</li>
+                    </ul>
+
+                    <h4>Color Key</h4>
+                    <ul>
+                        <li><span class="color-swatch" style="background:#5c6bc0"></span> <b>Purple</b> — Thread synchronization (<code>pthread_cond_wait</code>, locks)</li>
+                        <li><span class="color-swatch" style="background:#ef5350"></span> <b>Red</b> — Memory operations (<code>malloc</code>, <code>free</code>, <code>mmap</code>)</li>
+                        <li><span class="color-swatch" style="background:#42a5f5"></span> <b>Blue</b> — I/O operations (<code>read</code>, <code>write</code>, <code>poll</code>, <code>epoll</code>)</li>
+                        <li><span class="color-swatch" style="background:#26c6da"></span> <b>Cyan</b> — SSL/TLS operations</li>
+                        <li><span class="color-swatch" style="background:#ab47bc"></span> <b>Violet</b> — C++ standard library (<code>std::</code>)</li>
+                        <li><span class="color-swatch" style="background:#d4722a"></span> <b>Warm/Orange</b> — Application-level functions</li>
+                    </ul>
+
+                    <h4>Interactive Controls</h4>
+                    <ul>
+                        <li><b>Hover</b> over any bar to see function name, sample count, and percentage in the status bar at the bottom</li>
+                        <li><b>Click</b> a bar to zoom into that subtree</li>
+                        <li><b>Search</b> to highlight all frames matching a function name</li>
+                        <li><b>Reset Zoom</b> to return to the full flamegraph view</li>
+                        <li><b>Download SVG</b> to save the flamegraph for sharing or documentation</li>
+                    </ul>
+
+                    <h4>What to Look For (Splunk)</h4>
+                    <ul>
+                        <li>High <code>pthread_cond_wait</code> = threads waiting for work (often normal)</li>
+                        <li>High <code>malloc</code>/<code>free</code> = memory pressure or excessive allocation</li>
+                        <li>High <code>PCRE::match</code> or <code>RegexMatcher</code> = expensive regex in searches or field extractions</li>
+                        <li>High <code>zlib::compress</code> = compression overhead during indexing</li>
+                        <li>High <code>SSL_read</code>/<code>SSL_write</code> = SSL/TLS overhead on data inputs</li>
+                        <li>Deep stacks through <code>SearchProcessor</code> = complex search queries</li>
+                    </ul>
+                </div>
+            </div>`;
+        }
+
+        function toggleGuide() {
+            const toggle = document.getElementById('guideToggle');
+            const content = document.getElementById('guideContent');
+            toggle.classList.toggle('expanded');
+            content.classList.toggle('visible');
         }
 
         function resetZoom() {
@@ -759,10 +1172,17 @@
             document.getElementById('errorMsg').classList.remove('visible');
             document.getElementById('timeBar').style.display = 'none';
             document.getElementById('statSkipped').style.display = 'none';
+            document.getElementById('statusBar').classList.remove('visible');
+            document.getElementById('searchResultBar').classList.remove('visible');
             document.getElementById('dropZone').style.display = 'flex';
             document.getElementById('searchInput').value = '';
             document.getElementById('fileInput').value = '';
+            const analysis = document.getElementById('analysisPanel');
+            if (analysis) analysis.innerHTML = '';
+            const guide = document.getElementById('guidePanel');
+            if (guide) guide.innerHTML = '';
             flameChart = null;
+            totalSamples = 0;
         }
 
         function showError(msg) {
