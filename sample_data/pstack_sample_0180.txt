@@ -1,0 +1,66 @@
+Thread 1 (Thread 0x7f24ecc72795 (LWP 28001)):
+#0  0x00007fb8053a5478 in std::__introsort_loop () from /opt/splunk/lib/libsplunk.so
+#1  0x00007fdfe0843a67 in std::sort () from /opt/splunk/lib/libsplunk.so
+#2  0x00007fca46540070 in SortProcessor::sort () from /opt/splunk/lib/libsplunk.so
+#3  0x00007f7cc4a80f42 in SearchEvaluator::eval () from /opt/splunk/lib/libsplunk.so
+#4  0x00007f35e4691b6d in SearchProcessor::executeSearch () from /opt/splunk/lib/libsplunk.so
+#5  0x00007f5315a0742e in SearchProcessor::run () from /opt/splunk/lib/libsplunk.so
+#6  0x00007fcb7b84590a in ThreadPool::dispatch () from /opt/splunk/lib/libsplunk.so
+#7  0x00007fdb64e5a827 in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#8  0x00007f3facd95786 in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 2 (Thread 0x7f1a7d3117b2 (LWP 28002)):
+#0  0x00007fcd148f036e in write () from /lib64/libc.so.6
+#1  0x00007f23db571ce7 in TCPClient::send () from /opt/splunk/lib/libsplunk.so
+#2  0x00007f3a578ebcbb in ReplicationManager::replicate () from /opt/splunk/lib/libsplunk.so
+#3  0x00007f36da5c0320 in ClusterMaster::run () from /opt/splunk/lib/libsplunk.so
+#4  0x00007f5fdc1e77b1 in ThreadPool::dispatch () from /opt/splunk/lib/libsplunk.so
+#5  0x00007fadca2794f6 in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#6  0x00007f1b5c80d45f in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 3 (Thread 0x7f7ccdc3027f (LWP 28003)):
+#0  0x00007ffb131f7ff2 in RegexMatcher::match () from /opt/splunk/lib/libsplunk.so
+#1  0x00007f8620741baa in LineBreaker::split () from /opt/splunk/lib/libsplunk.so
+#2  0x00007ffb7b07cdd1 in IndexWriter::processData () from /opt/splunk/lib/libsplunk.so
+#3  0x00007fbb8606c7d2 in IndexWriter::run () from /opt/splunk/lib/libsplunk.so
+#4  0x00007f44de85f65e in ThreadPool::dispatch () from /opt/splunk/lib/libsplunk.so
+#5  0x00007f77b95003f9 in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#6  0x00007f2d7dee169b in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 4 (Thread 0x7f09f24d0063 (LWP 28004)):
+#0  0x00007fbb7d848f84 in PCRE::match () from /opt/splunk/lib/libsplunk.so
+#1  0x00007f1514a98a74 in FieldExtractor::extract () from /opt/splunk/lib/libsplunk.so
+#2  0x00007f471c56a34e in SearchEvaluator::eval () from /opt/splunk/lib/libsplunk.so
+#3  0x00007fb7ad9d316e in SearchProcessor::executeSearch () from /opt/splunk/lib/libsplunk.so
+#4  0x00007f67c11dcfcf in SearchProcessor::run () from /opt/splunk/lib/libsplunk.so
+#5  0x00007fe543f5c1c7 in ThreadPool::dispatch () from /opt/splunk/lib/libsplunk.so
+#6  0x00007f3a22ab1d23 in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#7  0x00007f8967ec8c56 in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 5 (Thread 0x7f2b745d2405 (LWP 28005)):
+#0  0x00007f045d9512d1 in epoll_wait () from /lib64/libc.so.6
+#1  0x00007f8e38ffbeb6 in HTTPServer::acceptLoop () from /opt/splunk/lib/libsplunk.so
+#2  0x00007f82f9548a48 in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#3  0x00007f9b8338c031 in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 6 (Thread 0x7fcc41128bb1 (LWP 28006)):
+#0  0x00007fe4ba6a2111 in pthread_cond_wait () from /lib64/libpthread.so.0
+#1  0x00007ff6d17cdc71 in MemoryManager::waitForThreshold () from /opt/splunk/lib/libsplunk.so
+#2  0x00007ff20bfceee7 in MemoryManager::run () from /opt/splunk/lib/libsplunk.so
+#3  0x00007f13dcae8f58 in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#4  0x00007f028ef1e8f1 in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 7 (Thread 0x7f06a662056c (LWP 28007)):
+#0  0x00007f6cc6fe6bc6 in pthread_cond_wait () from /lib64/libpthread.so.0
+#1  0x00007f0e80259fdf in IndexWriter::waitForData () from /opt/splunk/lib/libsplunk.so
+#2  0x00007f9e3abd5ef4 in IndexWriter::run () from /opt/splunk/lib/libsplunk.so
+#3  0x00007fa15799ac10 in ThreadPool::dispatch () from /opt/splunk/lib/libsplunk.so
+#4  0x00007f55e646403e in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#5  0x00007f03aa35493e in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 8 (Thread 0x7fbf2cbe9361 (LWP 28008)):
+#0  0x00007f0103650be6 in pthread_cond_timedwait () from /lib64/libpthread.so.0
+#1  0x00007f6d90f1db95 in Scheduler::waitForNextJob () from /opt/splunk/lib/libsplunk.so
+#2  0x00007ff2718f4cfa in Scheduler::run () from /opt/splunk/lib/libsplunk.so
+#3  0x00007f640c86f0f6 in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#4  0x00007f396869856d in main () from /opt/splunk/lib/libsplunk.so

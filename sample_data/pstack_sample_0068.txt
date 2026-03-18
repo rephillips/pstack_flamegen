@@ -1,0 +1,88 @@
+Thread 1 (Thread 0x7fee30c87678 (LWP 16801)):
+#0  0x00007f1b84e42eb9 in read () from /lib64/libc.so.6
+#1  0x00007f1a65cd8d87 in FileReader::read () from /opt/splunk/lib/libsplunk.so
+#2  0x00007fa213f3c231 in FileMonitor::checkFiles () from /opt/splunk/lib/libsplunk.so
+#3  0x00007fb7860b799a in FileMonitor::run () from /opt/splunk/lib/libsplunk.so
+#4  0x00007f38e9dc41a0 in ThreadPool::dispatch () from /opt/splunk/lib/libsplunk.so
+#5  0x00007fc8963f75bc in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#6  0x00007f2d499ac41c in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 2 (Thread 0x7f6684b25824 (LWP 16802)):
+#0  0x00007f6749236c23 in FileSystem::fsync () from /opt/splunk/lib/libsplunk.so
+#1  0x00007ffb6d8430c3 in BucketWriter::write () from /opt/splunk/lib/libsplunk.so
+#2  0x00007fde163c0518 in IndexWriter::writeBlock () from /opt/splunk/lib/libsplunk.so
+#3  0x00007f85a40c1857 in IndexWriter::processData () from /opt/splunk/lib/libsplunk.so
+#4  0x00007f50811c8ac2 in IndexWriter::run () from /opt/splunk/lib/libsplunk.so
+#5  0x00007f92bd0711d2 in ThreadPool::dispatch () from /opt/splunk/lib/libsplunk.so
+#6  0x00007f0e51e35418 in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#7  0x00007fe6b7e97b1b in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 3 (Thread 0x7f9ce821f241 (LWP 16803)):
+#0  0x00007f99b4e066e3 in WiredTiger::cursor_update () from /opt/splunk/lib/libsplunk.so
+#1  0x00007fe46041deff in MongoDB::update () from /opt/splunk/lib/libsplunk.so
+#2  0x00007f82a4d07432 in KVStoreHandler::run () from /opt/splunk/lib/libsplunk.so
+#3  0x00007fa04cae8bc8 in ThreadPool::dispatch () from /opt/splunk/lib/libsplunk.so
+#4  0x00007fe1d9319f6b in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#5  0x00007fb56fd6332b in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 4 (Thread 0x7f42dd83721a (LWP 16804)):
+#0  0x00007fb55f44a564 in std::__introsort_loop () from /opt/splunk/lib/libsplunk.so
+#1  0x00007fca84346765 in std::sort () from /opt/splunk/lib/libsplunk.so
+#2  0x00007f4339edd2fd in SortProcessor::sort () from /opt/splunk/lib/libsplunk.so
+#3  0x00007f0239453c80 in SearchEvaluator::eval () from /opt/splunk/lib/libsplunk.so
+#4  0x00007fc94344211c in SearchProcessor::executeSearch () from /opt/splunk/lib/libsplunk.so
+#5  0x00007f12cae5a7ea in SearchProcessor::run () from /opt/splunk/lib/libsplunk.so
+#6  0x00007f84fa7fa3e7 in ThreadPool::dispatch () from /opt/splunk/lib/libsplunk.so
+#7  0x00007f7e83c4b2be in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#8  0x00007fd20a336ac9 in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 5 (Thread 0x7f77a708a17a (LWP 16805)):
+#0  0x00007f181a5c3c73 in FileSystem::fsync () from /opt/splunk/lib/libsplunk.so
+#1  0x00007f74dfa3e1e1 in BucketWriter::write () from /opt/splunk/lib/libsplunk.so
+#2  0x00007f81c2f21e05 in IndexWriter::writeBlock () from /opt/splunk/lib/libsplunk.so
+#3  0x00007f212aece164 in IndexWriter::processData () from /opt/splunk/lib/libsplunk.so
+#4  0x00007f8fb599ede4 in IndexWriter::run () from /opt/splunk/lib/libsplunk.so
+#5  0x00007f03ab347811 in ThreadPool::dispatch () from /opt/splunk/lib/libsplunk.so
+#6  0x00007f1f513ab6b1 in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#7  0x00007fbbb646262f in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 6 (Thread 0x7faa62236491 (LWP 16806)):
+#0  0x00007fee6d8563ed in RegexMatcher::match () from /opt/splunk/lib/libsplunk.so
+#1  0x00007f26e3c0295d in LineBreaker::split () from /opt/splunk/lib/libsplunk.so
+#2  0x00007fac50241f44 in IndexWriter::processData () from /opt/splunk/lib/libsplunk.so
+#3  0x00007f34d74cb134 in IndexWriter::run () from /opt/splunk/lib/libsplunk.so
+#4  0x00007f3ed9e6f74f in ThreadPool::dispatch () from /opt/splunk/lib/libsplunk.so
+#5  0x00007ff3a6cf2b6d in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#6  0x00007ff18d142373 in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 7 (Thread 0x7fd5cdec87a9 (LWP 16807)):
+#0  0x00007f0a892f0d63 in pthread_cond_wait () from /lib64/libpthread.so.0
+#1  0x00007f287068a99a in IndexWriter::waitForData () from /opt/splunk/lib/libsplunk.so
+#2  0x00007f2cdae22eeb in IndexWriter::run () from /opt/splunk/lib/libsplunk.so
+#3  0x00007ff17421cf2b in ThreadPool::dispatch () from /opt/splunk/lib/libsplunk.so
+#4  0x00007ff57b586c2d in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#5  0x00007ff13babc0f6 in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 8 (Thread 0x7ff8cbcdbab7 (LWP 16808)):
+#0  0x00007f38161bb197 in RegexMatcher::match () from /opt/splunk/lib/libsplunk.so
+#1  0x00007f89c4f7d954 in LineBreaker::split () from /opt/splunk/lib/libsplunk.so
+#2  0x00007f2281beaa7a in IndexWriter::processData () from /opt/splunk/lib/libsplunk.so
+#3  0x00007f78f4c280cd in IndexWriter::run () from /opt/splunk/lib/libsplunk.so
+#4  0x00007f2dfe8b3895 in ThreadPool::dispatch () from /opt/splunk/lib/libsplunk.so
+#5  0x00007f06f818672c in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#6  0x00007fcc0d669679 in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 9 (Thread 0x7ff7f98292ea (LWP 16809)):
+#0  0x00007fe0e0da815c in pthread_cond_wait () from /lib64/libpthread.so.0
+#1  0x00007fa17658053a in IndexWriter::waitForData () from /opt/splunk/lib/libsplunk.so
+#2  0x00007f62faaf6129 in IndexWriter::run () from /opt/splunk/lib/libsplunk.so
+#3  0x00007f74b646c2ee in ThreadPool::dispatch () from /opt/splunk/lib/libsplunk.so
+#4  0x00007f131a35d83a in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#5  0x00007fccb0a6575a in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 10 (Thread 0x7f4b6cd793fa (LWP 16810)):
+#0  0x00007ff48d9531bb in pthread_cond_wait () from /lib64/libpthread.so.0
+#1  0x00007f3242a24078 in MemoryManager::waitForThreshold () from /opt/splunk/lib/libsplunk.so
+#2  0x00007faa10587c93 in MemoryManager::run () from /opt/splunk/lib/libsplunk.so
+#3  0x00007f14e77440af in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#4  0x00007ff4c922e4be in main () from /opt/splunk/lib/libsplunk.so

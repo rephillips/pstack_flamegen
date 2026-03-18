@@ -1,0 +1,90 @@
+Thread 1 (Thread 0x7fbc19c2bf45 (LWP 36901)):
+#0  0x00007ff4d5c31103 in LexerBase::tokenize () from /opt/splunk/lib/libsplunk.so
+#1  0x00007f7b0c632ed4 in SearchParser::parse () from /opt/splunk/lib/libsplunk.so
+#2  0x00007f6e9cf6caad in SearchProcessor::executeSearch () from /opt/splunk/lib/libsplunk.so
+#3  0x00007f885fb96049 in SearchProcessor::run () from /opt/splunk/lib/libsplunk.so
+#4  0x00007f5637475685 in ThreadPool::dispatch () from /opt/splunk/lib/libsplunk.so
+#5  0x00007f0bd8c3f8f6 in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#6  0x00007f553c71bb0d in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 2 (Thread 0x7fd1c8601b81 (LWP 36902)):
+#0  0x00007f84db13b5c8 in FileSystem::unlink () from /opt/splunk/lib/libsplunk.so
+#1  0x00007ffd3a126c11 in BucketManager::evictBucket () from /opt/splunk/lib/libsplunk.so
+#2  0x00007fc39be17f22 in MemoryManager::garbageCollect () from /opt/splunk/lib/libsplunk.so
+#3  0x00007f7e238460cf in MemoryManager::run () from /opt/splunk/lib/libsplunk.so
+#4  0x00007f19757616c4 in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#5  0x00007fdde9c9c236 in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 3 (Thread 0x7fcc6f00dd81 (LWP 36903)):
+#0  0x00007f5230961851 in pthread_cond_timedwait () from /lib64/libpthread.so.0
+#1  0x00007f27cdf7cd4b in Scheduler::waitForNextJob () from /opt/splunk/lib/libsplunk.so
+#2  0x00007f9af00bc8c8 in Scheduler::run () from /opt/splunk/lib/libsplunk.so
+#3  0x00007f5b4b5a90c5 in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#4  0x00007f800b118766 in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 4 (Thread 0x7f5238988f12 (LWP 36904)):
+#0  0x00007f020818f0db in pthread_cond_wait () from /lib64/libpthread.so.0
+#1  0x00007f9fb883b1ff in SearchProcessor::waitForWork () from /opt/splunk/lib/libsplunk.so
+#2  0x00007ffba2bc7f0e in SearchProcessor::run () from /opt/splunk/lib/libsplunk.so
+#3  0x00007f978f0098ba in ThreadPool::dispatch () from /opt/splunk/lib/libsplunk.so
+#4  0x00007ff3b1da1734 in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#5  0x00007f1e9b5aac34 in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 5 (Thread 0x7f929b1d7437 (LWP 36905)):
+#0  0x00007fdbbd7b0539 in LexerBase::tokenize () from /opt/splunk/lib/libsplunk.so
+#1  0x00007fd76693bab2 in SearchParser::parse () from /opt/splunk/lib/libsplunk.so
+#2  0x00007f6c6400f20f in SearchProcessor::executeSearch () from /opt/splunk/lib/libsplunk.so
+#3  0x00007fd8ef4e1fa2 in SearchProcessor::run () from /opt/splunk/lib/libsplunk.so
+#4  0x00007fb02801dfee in ThreadPool::dispatch () from /opt/splunk/lib/libsplunk.so
+#5  0x00007f9fe367c2f0 in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#6  0x00007fd0b821a402 in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 6 (Thread 0x7f1f91977bb0 (LWP 36906)):
+#0  0x00007fed9ef0a5e8 in HashTable::insert () from /opt/splunk/lib/libsplunk.so
+#1  0x00007fdd3b8e8603 in StatsProcessor::aggregate () from /opt/splunk/lib/libsplunk.so
+#2  0x00007fd25c7a1980 in SearchEvaluator::eval () from /opt/splunk/lib/libsplunk.so
+#3  0x00007f63657586b5 in SearchProcessor::executeSearch () from /opt/splunk/lib/libsplunk.so
+#4  0x00007fbcc3edc405 in SearchProcessor::run () from /opt/splunk/lib/libsplunk.so
+#5  0x00007ffae9ab40d7 in ThreadPool::dispatch () from /opt/splunk/lib/libsplunk.so
+#6  0x00007ff0a50e15e0 in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#7  0x00007fcee63c48a7 in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 7 (Thread 0x7f4d90f53bfe (LWP 36907)):
+#0  0x00007f3c6ad42fb0 in OpenSSL::SSL_read () from /opt/splunk/lib/libsplunk.so
+#1  0x00007f688107f15f in SSLEngine::read () from /opt/splunk/lib/libsplunk.so
+#2  0x00007f6d944cb64b in HTTPServer::handleRequest () from /opt/splunk/lib/libsplunk.so
+#3  0x00007f2200b6928e in HTTPServer::acceptLoop () from /opt/splunk/lib/libsplunk.so
+#4  0x00007f4f8f49d4ec in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#5  0x00007f9f3438694e in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 8 (Thread 0x7f9069c09547 (LWP 36908)):
+#0  0x00007fda2108652e in recv () from /lib64/libc.so.6
+#1  0x00007f11f4dcf8f6 in TcpInputProcessor::readData () from /opt/splunk/lib/libsplunk.so
+#2  0x00007fadef9af728 in TcpInputProcessor::run () from /opt/splunk/lib/libsplunk.so
+#3  0x00007fa94ccab028 in ThreadPool::dispatch () from /opt/splunk/lib/libsplunk.so
+#4  0x00007fb75d4494d9 in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#5  0x00007f1da46cb5e5 in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 9 (Thread 0x7fcddacdc43b (LWP 36909)):
+#0  0x00007fd54caf01ad in recv () from /lib64/libc.so.6
+#1  0x00007fce87bd3697 in TcpInputProcessor::readData () from /opt/splunk/lib/libsplunk.so
+#2  0x00007f64bb0cc340 in TcpInputProcessor::run () from /opt/splunk/lib/libsplunk.so
+#3  0x00007f87d643b813 in ThreadPool::dispatch () from /opt/splunk/lib/libsplunk.so
+#4  0x00007f0a3c0a3367 in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#5  0x00007fc78a22aa64 in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 10 (Thread 0x7f43766f17d2 (LWP 36910)):
+#0  0x00007f668ba4d7ce in recvfrom () from /lib64/libc.so.6
+#1  0x00007ffd0a554f66 in UDPInputProcessor::readData () from /opt/splunk/lib/libsplunk.so
+#2  0x00007f9c9c631e71 in UDPInputProcessor::run () from /opt/splunk/lib/libsplunk.so
+#3  0x00007fd3f6f628b2 in ThreadPool::dispatch () from /opt/splunk/lib/libsplunk.so
+#4  0x00007f8be30da0f0 in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#5  0x00007fa17babb1b6 in main () from /opt/splunk/lib/libsplunk.so
+
+Thread 11 (Thread 0x7f5d3bca7f82 (LWP 36911)):
+#0  0x00007f3621f00473 in FileSystem::unlink () from /opt/splunk/lib/libsplunk.so
+#1  0x00007ff5cbe8e1ef in BucketManager::evictBucket () from /opt/splunk/lib/libsplunk.so
+#2  0x00007feecd9a3f18 in MemoryManager::garbageCollect () from /opt/splunk/lib/libsplunk.so
+#3  0x00007f217f23e354 in MemoryManager::run () from /opt/splunk/lib/libsplunk.so
+#4  0x00007f25ecb6f761 in Splunkd::run () from /opt/splunk/lib/libsplunk.so
+#5  0x00007f3b82243402 in main () from /opt/splunk/lib/libsplunk.so

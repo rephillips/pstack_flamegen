@@ -5,4 +5,4 @@ __pycache__/
 dist/
 build/
 .env
-sample_pstack.txt
+generate_samples.py
