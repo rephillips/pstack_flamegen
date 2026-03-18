@@ -418,6 +418,98 @@
             color: var(--code-text);
         }
 
+        .stacks-panel {
+            background: var(--bg-primary);
+            padding: 24px;
+            color: var(--text-primary);
+            border-top: 1px solid var(--border);
+        }
+
+        .stacks-panel h3 {
+            color: var(--accent);
+            font-size: 18px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 8px;
+            cursor: pointer;
+        }
+
+        .stacks-panel h3:hover { color: var(--accent-light); }
+        .stacks-panel h3::after { content: ' ▸'; font-size: 14px; }
+        .stacks-panel h3.expanded::after { content: ' ▾'; }
+
+        .stacks-content { display: none; }
+        .stacks-content.visible { display: block; }
+
+        .stack-entry {
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            margin-bottom: 8px;
+            overflow: hidden;
+        }
+
+        .stack-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: var(--bg-secondary);
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .stack-header:hover { background: var(--bg-hover); }
+
+        .stack-count {
+            background: var(--border);
+            color: var(--accent);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+
+        .stack-leaf {
+            font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+            color: var(--highlight);
+            font-size: 12px;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            margin-right: 12px;
+        }
+
+        .stack-frames {
+            display: none;
+            padding: 8px 12px;
+            background: var(--bg-primary);
+            border-top: 1px solid var(--border);
+            font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+            font-size: 11px;
+            line-height: 1.6;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .stack-frames.visible { display: block; }
+
+        .stack-frames .frame {
+            color: var(--text-secondary);
+            padding: 1px 0;
+        }
+
+        .stack-frames .frame-num {
+            color: var(--text-dim);
+            display: inline-block;
+            width: 30px;
+            text-align: right;
+            margin-right: 8px;
+        }
+
+        .stack-frames .frame-func { color: var(--highlight); }
+
         .guide-content .color-swatch {
             display: inline-block;
             width: 12px;
@@ -839,6 +931,7 @@
 
             return {
                 data: hierarchy,
+                folded: folded,
                 stats: {
                     files: fileCount,
                     total_stacks: allStacks.length,
@@ -935,6 +1028,7 @@
         let totalSamples = 0;
         let currentFlamegraphData = null;
         let currentStats = null;
+        let currentFoldedStacks = null;
 
         document.getElementById('searchInput').addEventListener('input', (e) => {
             if (flameChart) {
@@ -985,8 +1079,9 @@
 
                 document.getElementById('loading').classList.remove('visible');
 
-                // Store stats for export
+                // Store stats and folded stacks for export
                 currentStats = { stats: data.stats, time_range: data.time_range };
+                currentFoldedStacks = data.folded;
 
                 // Update stats
                 document.getElementById('statFiles').textContent = data.stats.files;
@@ -1065,8 +1160,9 @@
                 });
             }, 500);
 
-            // Show analysis panel and guide
+            // Show analysis panel, top stacks, and guide
             showAnalysis(data);
+            if (currentFoldedStacks) showTopStacks(currentFoldedStacks);
             showGuide();
 
             window.onresize = () => {
@@ -1270,6 +1366,72 @@
             content.classList.toggle('visible');
         }
 
+        // ========== TOP STACKS PANEL ==========
+
+        function showTopStacks(foldedData) {
+            if (!foldedData || !foldedData.length) return;
+
+            // Show top 50 stacks sorted by count (already sorted from stacksToFolded)
+            const top = foldedData.slice(0, 50);
+
+            let html = '<div class="stacks-panel">';
+            html += `<h3 id="stacksToggle">Top Stacks (${foldedData.length} unique)</h3>`;
+            html += '<div class="stacks-content" id="stacksContent">';
+
+            for (let i = 0; i < top.length; i++) {
+                const entry = top[i];
+                const frames = entry.stack.split(';');
+                const leaf = frames[frames.length - 1] || '[unknown]';
+                const pct = totalSamples > 0 ? ((entry.count / totalSamples) * 100).toFixed(1) : '0';
+
+                html += `<div class="stack-entry">`;
+                html += `<div class="stack-header" onclick="toggleStack(${i})">`;
+                html += `<span class="stack-leaf" title="${escapeHtml(entry.stack.replace(/;/g, ' → '))}">${escapeHtml(leaf)}</span>`;
+                html += `<span class="stack-count">${entry.count.toLocaleString()}x (${pct}%)</span>`;
+                html += `</div>`;
+                html += `<div class="stack-frames" id="stack-${i}">`;
+
+                // Show frames top-down (root at top, leaf at bottom) with frame numbers
+                for (let j = 0; j < frames.length; j++) {
+                    html += `<div class="frame"><span class="frame-num">#${j}</span><span class="frame-func">${escapeHtml(frames[j])}</span></div>`;
+                }
+
+                html += `</div></div>`;
+            }
+
+            if (foldedData.length > 50) {
+                html += `<div style="color:var(--text-muted);font-size:13px;padding:8px 0;">Showing top 50 of ${foldedData.length} unique stacks</div>`;
+            }
+
+            html += '</div></div>';
+
+            let panel = document.getElementById('stacksPanel');
+            if (!panel) {
+                panel = document.createElement('div');
+                panel.id = 'stacksPanel';
+                // Insert between analysis and guide
+                const guideEl = document.getElementById('guidePanel');
+                if (guideEl) guideEl.before(panel);
+                else {
+                    const analysisEl = document.getElementById('analysisPanel');
+                    if (analysisEl) analysisEl.after(panel);
+                    else document.getElementById('flamegraph-container').after(panel);
+                }
+            }
+            panel.innerHTML = html;
+
+            // Add toggle listener
+            document.getElementById('stacksToggle').addEventListener('click', function() {
+                this.classList.toggle('expanded');
+                document.getElementById('stacksContent').classList.toggle('visible');
+            });
+        }
+
+        function toggleStack(idx) {
+            const el = document.getElementById('stack-' + idx);
+            if (el) el.classList.toggle('visible');
+        }
+
         function resetZoom() {
             if (flameChart) flameChart.resetZoom();
         }
@@ -1305,6 +1467,10 @@
             // Get analysis HTML from the panel
             const analysisEl = document.getElementById('analysisPanel');
             const analysisHtml = analysisEl ? analysisEl.innerHTML : '';
+
+            // Get stacks HTML from the panel
+            const stacksEl = document.getElementById('stacksPanel');
+            const stacksHtml = stacksEl ? stacksEl.innerHTML : '';
 
             // Get guide HTML from the panel
             const guideEl = document.getElementById('guidePanel');
@@ -1354,6 +1520,23 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .analysis-table td { padding: 5px 12px; border-bottom: 1px solid #0a1a30; }
 .analysis-table .func-col { font-family: monospace; color: #ffab40; font-size: 12px; }
 .analysis-table tr:hover { background: #1a2742; }
+.stacks-panel { background: #1a1a2e; padding: 24px; color: #e0e0e0; border-top: 1px solid #0f3460; }
+.stacks-panel h3 { color: #00c853; font-size: 18px; margin-bottom: 16px; border-bottom: 1px solid #0f3460; padding-bottom: 8px; cursor: pointer; }
+.stacks-panel h3:hover { color: #69f0ae; }
+.stacks-panel h3::after { content: ' ▸'; font-size: 14px; }
+.stacks-panel h3.expanded::after { content: ' ▾'; }
+.stacks-content { display: none; }
+.stacks-content.visible { display: block; }
+.stack-entry { border: 1px solid #0f3460; border-radius: 6px; margin-bottom: 8px; overflow: hidden; }
+.stack-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #16213e; cursor: pointer; font-size: 13px; }
+.stack-header:hover { background: #1a2742; }
+.stack-count { background: #0f3460; color: #00c853; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 12px; white-space: nowrap; }
+.stack-leaf { font-family: monospace; color: #ffab40; font-size: 12px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 12px; }
+.stack-frames { display: none; padding: 8px 12px; background: #1a1a2e; border-top: 1px solid #0f3460; font-family: monospace; font-size: 11px; line-height: 1.6; max-height: 400px; overflow-y: auto; }
+.stack-frames.visible { display: block; }
+.stack-frames .frame { color: #aaa; padding: 1px 0; }
+.stack-frames .frame-num { color: #666; display: inline-block; width: 30px; text-align: right; margin-right: 8px; }
+.stack-frames .frame-func { color: #ffab40; }
 .guide-panel { background: #1a1a2e; padding: 24px; color: #ccc; border-top: 1px solid #0f3460; }
 .guide-panel h3 { color: #00c853; font-size: 18px; margin-bottom: 16px; border-bottom: 1px solid #0f3460; padding-bottom: 8px; cursor: pointer; }
 .guide-panel h3:hover { color: #69f0ae; }
@@ -1386,6 +1569,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
   <span class="p" id="sp"></span>
 </div>
 <div id="analysisPanel">${analysisHtml}</div>
+<div id="stacksPanel">${stacksHtml}</div>
 <div id="guidePanel">${guideHtml}</div>
 <script>
 var data = ${dataJson};
@@ -1409,6 +1593,20 @@ document.getElementById('search').addEventListener('input',function(e){
   if(t){chart.search(t)}else{chart.clear()}
 });
 window.onresize=function(){chart.width(document.body.clientWidth);d3.select('#chart').datum(data).call(chart)};
+// Stacks toggle
+document.querySelectorAll('.stacks-panel h3').forEach(function(h){
+  h.addEventListener('click',function(){
+    this.classList.toggle('expanded');
+    var c=this.nextElementSibling;
+    if(c)c.classList.toggle('visible');
+  });
+});
+document.querySelectorAll('.stack-header').forEach(function(h){
+  h.addEventListener('click',function(){
+    var f=this.nextElementSibling;
+    if(f)f.classList.toggle('visible');
+  });
+});
 // Guide toggle
 document.querySelectorAll('.guide-panel h3').forEach(function(h){
   h.addEventListener('click',function(){
@@ -1444,12 +1642,15 @@ document.querySelectorAll('.guide-panel h3').forEach(function(h){
             document.getElementById('fileInput').value = '';
             const analysis = document.getElementById('analysisPanel');
             if (analysis) analysis.innerHTML = '';
+            const stacks = document.getElementById('stacksPanel');
+            if (stacks) stacks.innerHTML = '';
             const guide = document.getElementById('guidePanel');
             if (guide) guide.innerHTML = '';
             flameChart = null;
             totalSamples = 0;
             currentFlamegraphData = null;
             currentStats = null;
+            currentFoldedStacks = null;
         }
 
         function showError(msg) {
