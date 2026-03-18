@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flamegraph Generator</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3-flame-graph@4.1.3/dist/d3-flamegraph.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/d3-flame-graph@4.1.3/dist/d3-flamegraph.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: #16213e;
+            border-bottom: 2px solid #0f3460;
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .header h1 {
+            font-size: 22px;
+            color: #00c853;
+            font-weight: 600;
+        }
+
+        .header .subtitle {
+            color: #888;
+            font-size: 13px;
+            margin-top: 2px;
+        }
+
+        .stats-bar {
+            display: none;
+            background: #16213e;
+            border-bottom: 1px solid #0f3460;
+            padding: 10px 24px;
+            gap: 24px;
+            font-size: 13px;
+        }
+
+        .stats-bar.visible { display: flex; }
+
+        .stat { color: #aaa; }
+        .stat strong { color: #00c853; margin-right: 4px; }
+
+        .toolbar {
+            display: none;
+            background: #1a1a2e;
+            padding: 12px 24px;
+            gap: 10px;
+            align-items: center;
+            border-bottom: 1px solid #0f3460;
+        }
+
+        .toolbar.visible { display: flex; }
+
+        .toolbar input[type="text"] {
+            background: #16213e;
+            border: 1px solid #0f3460;
+            color: #e0e0e0;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            flex: 1;
+            max-width: 400px;
+            outline: none;
+        }
+
+        .toolbar input[type="text"]:focus {
+            border-color: #00c853;
+        }
+
+        .toolbar input[type="text"]::placeholder { color: #555; }
+
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: 1px solid #0f3460;
+            background: #16213e;
+            color: #e0e0e0;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        .btn:hover { background: #0f3460; border-color: #00c853; }
+        .btn-primary { background: #00c853; color: #000; border-color: #00c853; font-weight: 600; }
+        .btn-primary:hover { background: #00e676; }
+
+        .drop-zone {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 60vh;
+            padding: 40px;
+        }
+
+        .drop-area {
+            border: 2px dashed #0f3460;
+            border-radius: 16px;
+            padding: 60px 80px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: #16213e;
+            max-width: 600px;
+            width: 100%;
+        }
+
+        .drop-area:hover, .drop-area.dragover {
+            border-color: #00c853;
+            background: #1a2742;
+        }
+
+        .drop-area .icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+
+        .drop-area h2 {
+            font-size: 20px;
+            margin-bottom: 8px;
+            color: #e0e0e0;
+        }
+
+        .drop-area p {
+            color: #888;
+            font-size: 14px;
+            margin-bottom: 16px;
+        }
+
+        .drop-area .formats {
+            color: #666;
+            font-size: 12px;
+        }
+
+        #flamegraph-container {
+            display: none;
+            padding: 0;
+            background: #fff;
+            min-height: 400px;
+        }
+
+        #flamegraph-container.visible { display: block; }
+
+        /* Override d3-flamegraph styles for readability */
+        #flamegraph-container .d3-flame-graph rect { stroke: #333; stroke-width: 0.5px; }
+
+        .loading {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 60px;
+        }
+
+        .loading.visible { display: flex; }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #0f3460;
+            border-top: 3px solid #00c853;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-bottom: 16px;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .error-msg {
+            display: none;
+            background: #3d1212;
+            border: 1px solid #f44336;
+            color: #ff8a80;
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin: 20px 24px;
+            font-size: 14px;
+        }
+
+        .error-msg.visible { display: block; }
+
+        .d3-flame-graph-tip {
+            background: #222 !important;
+            color: #eee !important;
+            border: 1px solid #444 !important;
+        }
+
+        input[type="file"] { display: none; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>Flamegraph Generator</h1>
+            <div class="subtitle">Upload pstack samples to generate interactive flamegraphs</div>
+        </div>
+        <div>
+            <button class="btn btn-primary" id="uploadBtn" onclick="document.getElementById('fileInput').click()">
+                Upload Files
+            </button>
+        </div>
+    </div>
+
+    <div class="stats-bar" id="statsBar">
+        <span class="stat"><strong id="statFiles">0</strong> files processed</span>
+        <span class="stat"><strong id="statStacks">0</strong> total stacks</span>
+        <span class="stat"><strong id="statUnique">0</strong> unique stacks</span>
+    </div>
+
+    <div class="toolbar" id="toolbar">
+        <input type="text" id="searchInput" placeholder="Search functions... (e.g. malloc, pthread)">
+        <button class="btn" id="resetZoomBtn" onclick="resetZoom()">Reset Zoom</button>
+        <button class="btn" id="clearSearchBtn" onclick="clearSearch()">Clear Search</button>
+        <button class="btn" onclick="downloadSVG()">Download SVG</button>
+        <button class="btn" onclick="resetAll()">New Upload</button>
+    </div>
+
+    <div class="drop-zone" id="dropZone">
+        <div class="drop-area" id="dropArea">
+            <div class="icon">📊</div>
+            <h2>Drop pstack files here</h2>
+            <p>or click to browse</p>
+            <div class="formats">Supports: raw pstack/gdb/jstack output files, or a ZIP archive</div>
+        </div>
+    </div>
+
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <div>Parsing stacks and generating flamegraph...</div>
+    </div>
+
+    <div class="error-msg" id="errorMsg"></div>
+
+    <div id="flamegraph-container"></div>
+
+    <input type="file" id="fileInput" multiple accept=".txt,.log,.out,.zip,.pstack,.trace,.tdump,*">
+
+    <script>
+        let flameChart = null;
+
+        // File input handler
+        document.getElementById('fileInput').addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                uploadFiles(e.target.files);
+            }
+        });
+
+        // Drag and drop
+        const dropArea = document.getElementById('dropArea');
+
+        dropArea.addEventListener('click', () => {
+            document.getElementById('fileInput').click();
+        });
+
+        ['dragenter', 'dragover'].forEach(evt => {
+            dropArea.addEventListener(evt, (e) => {
+                e.preventDefault();
+                dropArea.classList.add('dragover');
+            });
+        });
+
+        ['dragleave', 'drop'].forEach(evt => {
+            dropArea.addEventListener(evt, (e) => {
+                e.preventDefault();
+                dropArea.classList.remove('dragover');
+            });
+        });
+
+        dropArea.addEventListener('drop', (e) => {
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                uploadFiles(files);
+            }
+        });
+
+        // Search
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            if (flameChart) {
+                const term = e.target.value.trim();
+                if (term) {
+                    flameChart.search(term);
+                } else {
+                    flameChart.clear();
+                }
+            }
+        });
+
+        function uploadFiles(files) {
+            const formData = new FormData();
+            for (let i = 0; i < files.length; i++) {
+                formData.append('files', files[i]);
+            }
+
+            // Show loading
+            document.getElementById('dropZone').style.display = 'none';
+            document.getElementById('loading').classList.add('visible');
+            document.getElementById('errorMsg').classList.remove('visible');
+            document.getElementById('flamegraph-container').classList.remove('visible');
+            document.getElementById('statsBar').classList.remove('visible');
+            document.getElementById('toolbar').classList.remove('visible');
+
+            fetch('/upload', { method: 'POST', body: formData })
+                .then(res => res.json().then(data => ({ ok: res.ok, data })))
+                .then(({ ok, data }) => {
+                    document.getElementById('loading').classList.remove('visible');
+
+                    if (!ok) {
+                        showError(data.error || 'Unknown error');
+                        return;
+                    }
+
+                    // Update stats
+                    document.getElementById('statFiles').textContent = data.stats.files;
+                    document.getElementById('statStacks').textContent = data.stats.total_stacks.toLocaleString();
+                    document.getElementById('statUnique').textContent = data.stats.unique_stacks.toLocaleString();
+                    document.getElementById('statsBar').classList.add('visible');
+                    document.getElementById('toolbar').classList.add('visible');
+
+                    // Render flamegraph
+                    renderFlamegraph(data.data);
+                })
+                .catch(err => {
+                    document.getElementById('loading').classList.remove('visible');
+                    showError('Upload failed: ' + err.message);
+                });
+        }
+
+        function renderFlamegraph(data) {
+            const container = document.getElementById('flamegraph-container');
+            container.innerHTML = '';
+            container.classList.add('visible');
+
+            const width = container.clientWidth || window.innerWidth;
+
+            flameChart = flamegraph()
+                .width(width)
+                .cellHeight(20)
+                .transitionDuration(500)
+                .inverted(false)
+                .sort(true)
+                .title('')
+                .selfValue(false)
+                .setColorMapper(function(d) {
+                    // Color by depth with warm tones
+                    if (!d.parent) return '#666';
+                    const depth = d.depth || 0;
+                    const r = 200 + Math.floor(Math.random() * 55);
+                    const g = 80 + Math.floor(Math.random() * 80 + depth * 3);
+                    const b = 20 + Math.floor(Math.random() * 30);
+                    return `rgb(${r},${g},${b})`;
+                });
+
+            d3.select('#flamegraph-container')
+                .datum(data)
+                .call(flameChart);
+
+            // Handle window resize
+            window.onresize = () => {
+                if (flameChart) {
+                    flameChart.width(container.clientWidth || window.innerWidth);
+                    d3.select('#flamegraph-container')
+                        .datum(data)
+                        .call(flameChart);
+                }
+            };
+        }
+
+        function resetZoom() {
+            if (flameChart) flameChart.resetZoom();
+        }
+
+        function clearSearch() {
+            document.getElementById('searchInput').value = '';
+            if (flameChart) flameChart.clear();
+        }
+
+        function downloadSVG() {
+            const svg = document.querySelector('#flamegraph-container svg');
+            if (!svg) return;
+
+            // Clone SVG and inline styles
+            const clone = svg.cloneNode(true);
+            clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+
+            const serializer = new XMLSerializer();
+            const svgStr = serializer.serializeToString(clone);
+            const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'flamegraph.svg';
+            a.click();
+            URL.revokeObjectURL(a.href);
+        }
+
+        function resetAll() {
+            document.getElementById('flamegraph-container').classList.remove('visible');
+            document.getElementById('flamegraph-container').innerHTML = '';
+            document.getElementById('statsBar').classList.remove('visible');
+            document.getElementById('toolbar').classList.remove('visible');
+            document.getElementById('errorMsg').classList.remove('visible');
+            document.getElementById('dropZone').style.display = 'flex';
+            document.getElementById('searchInput').value = '';
+            document.getElementById('fileInput').value = '';
+            flameChart = null;
+        }
+
+        function showError(msg) {
+            const el = document.getElementById('errorMsg');
+            el.textContent = msg;
+            el.classList.add('visible');
+            document.getElementById('dropZone').style.display = 'flex';
+        }
+    </script>
+</body>
+</html>
