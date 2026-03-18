@@ -934,6 +934,7 @@
 
         let totalSamples = 0;
         let currentFlamegraphData = null;
+        let currentStats = null;
 
         document.getElementById('searchInput').addEventListener('input', (e) => {
             if (flameChart) {
@@ -983,6 +984,9 @@
                 const data = await processFiles(files);
 
                 document.getElementById('loading').classList.remove('visible');
+
+                // Store stats for export
+                currentStats = { stats: data.stats, time_range: data.time_range };
 
                 // Update stats
                 document.getElementById('statFiles').textContent = data.stats.files;
@@ -1280,6 +1284,31 @@
 
             const dataJson = JSON.stringify(currentFlamegraphData);
             const total = totalSamples;
+            const s = currentStats || {};
+            const stats = s.stats || {};
+            const tr = s.time_range;
+
+            // Build info lines
+            let infoHtml = `<span>${stats.files || 0} files</span><span>${(stats.total_stacks || 0).toLocaleString()} stacks</span><span>${(stats.unique_stacks || 0).toLocaleString()} unique</span>`;
+            if (stats.skipped_err_files > 0) infoHtml += `<span>${stats.skipped_err_files} .err skipped</span>`;
+
+            let timeHtml = '';
+            if (tr) {
+                const secs = tr.duration_seconds;
+                let dur;
+                if (secs < 60) dur = secs + 's';
+                else if (secs < 3600) dur = Math.floor(secs/60) + 'm ' + (secs%60) + 's';
+                else dur = Math.floor(secs/3600) + 'h ' + Math.floor((secs%3600)/60) + 'm ' + (secs%60) + 's';
+                timeHtml = `<div class="info-bar">Earliest: <b>${tr.earliest}</b> &nbsp; Latest: <b>${tr.latest}</b> &nbsp; Duration: <b>${dur}</b> &nbsp; Samples: <b>${tr.sample_count}</b></div>`;
+            }
+
+            // Get analysis HTML from the panel
+            const analysisEl = document.getElementById('analysisPanel');
+            const analysisHtml = analysisEl ? analysisEl.innerHTML : '';
+
+            // Get guide HTML from the panel
+            const guideEl = document.getElementById('guidePanel');
+            const guideHtml = guideEl ? guideEl.innerHTML : '';
 
             const html = `<!DOCTYPE html>
 <html lang="en">
@@ -1293,10 +1322,12 @@
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; }
-.header { background: #16213e; border-bottom: 2px solid #0f3460; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
-.header h1 { font-size: 20px; color: #00c853; }
-.header .info { color: #888; font-size: 13px; }
-.toolbar { background: #1a1a2e; padding: 10px 24px; display: flex; gap: 10px; align-items: center; border-bottom: 1px solid #0f3460; }
+.header { background: #16213e; border-bottom: 2px solid #0f3460; padding: 16px 24px; }
+.header h1 { font-size: 20px; color: #00c853; margin-bottom: 4px; }
+.info-bar { color: #aaa; font-size: 13px; display: flex; gap: 20px; flex-wrap: wrap; padding: 6px 0; }
+.info-bar b { color: #00c853; }
+.info-bar span { color: #aaa; }
+.toolbar { background: #1a1a2e; padding: 10px 24px; display: flex; gap: 10px; align-items: center; border-bottom: 1px solid #0f3460; flex-wrap: wrap; }
 .toolbar input { background: #16213e; border: 1px solid #0f3460; color: #e0e0e0; padding: 8px 12px; border-radius: 6px; font-size: 14px; flex: 1; max-width: 400px; outline: none; }
 .toolbar input:focus { border-color: #00c853; }
 .toolbar input::placeholder { color: #555; }
@@ -1310,12 +1341,38 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .status .s { color: #ffab40; }
 .status .p { color: #40c4ff; }
 .d3-flame-graph-tip { background: #222 !important; color: #eee !important; border: 1px solid #444 !important; }
+.analysis-panel { background: #16213e; padding: 24px; color: #e0e0e0; }
+.analysis-panel h3 { color: #00c853; font-size: 18px; margin-bottom: 16px; border-bottom: 1px solid #0f3460; padding-bottom: 8px; }
+.analysis-panel h4 { color: #aaa; font-size: 14px; margin-bottom: 8px; font-weight: 600; }
+.analysis-section { margin-bottom: 20px; }
+.analysis-summary { display: flex; gap: 16px; margin-bottom: 8px; }
+.analysis-badge { padding: 6px 14px; border-radius: 6px; font-size: 14px; font-weight: 600; }
+.analysis-badge.active { background: #1b5e20; color: #69f0ae; }
+.analysis-badge.idle { background: #0d47a1; color: #82b1ff; }
+.analysis-table { width: 100%; max-width: 700px; border-collapse: collapse; font-size: 13px; }
+.analysis-table th { text-align: left; color: #888; padding: 6px 12px; border-bottom: 1px solid #0f3460; font-weight: 500; }
+.analysis-table td { padding: 5px 12px; border-bottom: 1px solid #0a1a30; }
+.analysis-table .func-col { font-family: monospace; color: #ffab40; font-size: 12px; }
+.analysis-table tr:hover { background: #1a2742; }
+.guide-panel { background: #1a1a2e; padding: 24px; color: #ccc; border-top: 1px solid #0f3460; }
+.guide-panel h3 { color: #00c853; font-size: 18px; margin-bottom: 16px; border-bottom: 1px solid #0f3460; padding-bottom: 8px; cursor: pointer; }
+.guide-panel h3:hover { color: #69f0ae; }
+.guide-panel h3::after { content: ' ▸'; font-size: 14px; }
+.guide-panel h3.expanded::after { content: ' ▾'; }
+.guide-content { display: none; font-size: 14px; line-height: 1.7; }
+.guide-content.visible { display: block; }
+.guide-content h4 { color: #aaa; margin: 16px 0 8px; font-size: 14px; }
+.guide-content ul { margin-left: 20px; margin-bottom: 12px; }
+.guide-content li { margin-bottom: 4px; }
+.guide-content code { background: #0f3460; padding: 2px 6px; border-radius: 4px; font-size: 12px; color: #ffab40; }
+.guide-content .color-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: middle; margin-right: 4px; }
 </style>
 </head>
 <body>
 <div class="header">
   <h1>Flamegraph</h1>
-  <div class="info">${total.toLocaleString()} total samples</div>
+  <div class="info-bar">${infoHtml}</div>
+  ${timeHtml}
 </div>
 <div class="toolbar">
   <input type="text" id="search" placeholder="Search functions...">
@@ -1328,6 +1385,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
   <span class="s" id="ss"></span>
   <span class="p" id="sp"></span>
 </div>
+<div id="analysisPanel">${analysisHtml}</div>
+<div id="guidePanel">${guideHtml}</div>
 <script>
 var data = ${dataJson};
 var total = ${total};
@@ -1350,6 +1409,14 @@ document.getElementById('search').addEventListener('input',function(e){
   if(t){chart.search(t)}else{chart.clear()}
 });
 window.onresize=function(){chart.width(document.body.clientWidth);d3.select('#chart').datum(data).call(chart)};
+// Guide toggle
+document.querySelectorAll('.guide-panel h3').forEach(function(h){
+  h.addEventListener('click',function(){
+    this.classList.toggle('expanded');
+    var c=this.nextElementSibling;
+    if(c)c.classList.toggle('visible');
+  });
+});
 <\/script>
 </body>
 </html>`;
@@ -1382,6 +1449,7 @@ window.onresize=function(){chart.width(document.body.clientWidth);d3.select('#ch
             flameChart = null;
             totalSamples = 0;
             currentFlamegraphData = null;
+            currentStats = null;
         }
 
         function showError(msg) {
