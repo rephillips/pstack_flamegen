@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flamegraph Generator</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3-flame-graph@4.1.3/dist/d3-flamegraph.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/d3-flame-graph@4.1.3/dist/d3-flamegraph.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: #16213e;
+            border-bottom: 2px solid #0f3460;
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .header h1 {
+            font-size: 22px;
+            color: #00c853;
+            font-weight: 600;
+        }
+
+        .header .subtitle {
+            color: #888;
+            font-size: 13px;
+            margin-top: 2px;
+        }
+
+        .stats-bar {
+            display: none;
+            background: #16213e;
+            border-bottom: 1px solid #0f3460;
+            padding: 10px 24px;
+            gap: 24px;
+            font-size: 13px;
+            flex-wrap: wrap;
+        }
+
+        .stats-bar.visible { display: flex; }
+
+        .stat { color: #aaa; }
+        .stat strong { color: #00c853; margin-right: 4px; }
+
+        .toolbar {
+            display: none;
+            background: #1a1a2e;
+            padding: 12px 24px;
+            gap: 10px;
+            align-items: center;
+            border-bottom: 1px solid #0f3460;
+            flex-wrap: wrap;
+        }
+
+        .toolbar.visible { display: flex; }
+
+        .toolbar input[type="text"] {
+            background: #16213e;
+            border: 1px solid #0f3460;
+            color: #e0e0e0;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            flex: 1;
+            max-width: 400px;
+            outline: none;
+        }
+
+        .toolbar input[type="text"]:focus { border-color: #00c853; }
+        .toolbar input[type="text"]::placeholder { color: #555; }
+
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: 1px solid #0f3460;
+            background: #16213e;
+            color: #e0e0e0;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        .btn:hover { background: #0f3460; border-color: #00c853; }
+        .btn-primary { background: #00c853; color: #000; border-color: #00c853; font-weight: 600; }
+        .btn-primary:hover { background: #00e676; }
+
+        .drop-zone {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 60vh;
+            padding: 40px;
+        }
+
+        .drop-area {
+            border: 2px dashed #0f3460;
+            border-radius: 16px;
+            padding: 60px 80px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: #16213e;
+            max-width: 600px;
+            width: 100%;
+        }
+
+        .drop-area:hover, .drop-area.dragover {
+            border-color: #00c853;
+            background: #1a2742;
+        }
+
+        .drop-area .icon { font-size: 48px; margin-bottom: 16px; }
+        .drop-area h2 { font-size: 20px; margin-bottom: 8px; color: #e0e0e0; }
+        .drop-area p { color: #888; font-size: 14px; margin-bottom: 16px; }
+        .drop-area .formats { color: #666; font-size: 12px; }
+
+        #flamegraph-container {
+            display: none;
+            padding: 0;
+            background: #fff;
+            min-height: 400px;
+        }
+
+        #flamegraph-container.visible { display: block; }
+        #flamegraph-container .d3-flame-graph rect { stroke: #333; stroke-width: 0.5px; }
+
+        .loading {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 60px;
+        }
+
+        .loading.visible { display: flex; }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #0f3460;
+            border-top: 3px solid #00c853;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-bottom: 16px;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .error-msg {
+            display: none;
+            background: #3d1212;
+            border: 1px solid #f44336;
+            color: #ff8a80;
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin: 20px 24px;
+            font-size: 14px;
+        }
+
+        .error-msg.visible { display: block; }
+
+        .d3-flame-graph-tip {
+            background: #222 !important;
+            color: #eee !important;
+            border: 1px solid #444 !important;
+        }
+
+        .progress-text { color: #aaa; font-size: 13px; margin-top: 8px; }
+
+        input[type="file"] { display: none; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>Flamegraph Generator</h1>
+            <div class="subtitle">Upload pstack samples to generate interactive flamegraphs — runs entirely in your browser</div>
+        </div>
+        <div>
+            <button class="btn btn-primary" id="uploadBtn" onclick="document.getElementById('fileInput').click()">
+                Upload Files
+            </button>
+        </div>
+    </div>
+
+    <div class="stats-bar" id="statsBar">
+        <span class="stat"><strong id="statFiles">0</strong> files processed</span>
+        <span class="stat"><strong id="statStacks">0</strong> total stacks</span>
+        <span class="stat"><strong id="statUnique">0</strong> unique stacks</span>
+        <span class="stat" id="statSkipped" style="display:none"><strong id="statSkippedCount">0</strong> .err files skipped</span>
+    </div>
+
+    <div class="stats-bar" id="timeBar" style="display:none; border-top:0; padding-top:0;">
+        <span class="stat">Earliest: <strong id="timeEarliest">—</strong></span>
+        <span class="stat">Latest: <strong id="timeLatest">—</strong></span>
+        <span class="stat">Duration: <strong id="timeDuration">—</strong></span>
+        <span class="stat">Samples: <strong id="timeSamples">—</strong></span>
+    </div>
+
+    <div class="toolbar" id="toolbar">
+        <input type="text" id="searchInput" placeholder="Search functions... (e.g. malloc, pthread)">
+        <button class="btn" id="resetZoomBtn" onclick="resetZoom()">Reset Zoom</button>
+        <button class="btn" id="clearSearchBtn" onclick="clearSearch()">Clear Search</button>
+        <button class="btn" onclick="downloadSVG()">Download SVG</button>
+        <button class="btn" onclick="resetAll()">New Upload</button>
+    </div>
+
+    <div class="drop-zone" id="dropZone">
+        <div class="drop-area" id="dropArea">
+            <div class="icon">📊</div>
+            <h2>Drop pstack files here</h2>
+            <p>or click to browse</p>
+            <div class="formats">Supports: .out pstack/gdb/jstack files, ZIP or tar.gz archives<br>No server required — all processing happens in your browser</div>
+        </div>
+    </div>
+
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <div>Parsing stacks and generating flamegraph...</div>
+        <div class="progress-text" id="progressText"></div>
+    </div>
+
+    <div class="error-msg" id="errorMsg"></div>
+
+    <div id="flamegraph-container"></div>
+
+    <input type="file" id="fileInput" multiple>
+
+    <script>
+        let flameChart = null;
+
+        // ========== PSTACK PARSER (ported from Python) ==========
+
+        function parsePstackOutput(text) {
+            const stacks = [];
+            let currentStack = [];
+            let inThread = false;
+
+            const lines = text.split('\n');
+            for (const rawLine of lines) {
+                const line = rawLine.trim();
+
+                // Detect thread boundaries
+                if (/^Thread \d+/.test(line) ||
+                    /^#\d+\s+(daemon\s+)?prio=/.test(line) ||
+                    /^".*"\s+#?\d+/.test(line) ||
+                    /^-{3,}\s+lwp/i.test(line) ||
+                    /^LWP\s+\d+/.test(line)) {
+                    if (currentStack.length > 0) {
+                        stacks.push(currentStack);
+                        currentStack = [];
+                    }
+                    inThread = true;
+                    continue;
+                }
+
+                // Empty line = end of stack
+                if (!line) {
+                    if (currentStack.length > 0) {
+                        stacks.push(currentStack);
+                        currentStack = [];
+                    }
+                    inThread = false;
+                    continue;
+                }
+
+                // Parse stack frames
+                let funcName = null;
+
+                // Format: #N  0x... in func_name () from /lib/...
+                let m = line.match(/^#\d+\s+0x[0-9a-fA-F]+\s+in\s+(.+?)(?:\s*\(.*?\))?\s*(?:from\s+|at\s+|$)/);
+                if (m) funcName = m[1].trim();
+
+                // Format: #N  func_name (args) at file.c:123
+                if (!funcName) {
+                    m = line.match(/^#\d+\s+(?:0x[0-9a-fA-F]+\s+in\s+)?(.+?)\s*\(/);
+                    if (m) funcName = m[1].trim();
+                }
+
+                // Format: at com.example.Class.method(File.java:123)  (jstack)
+                if (!funcName) {
+                    m = line.match(/^\s*at\s+(.+?)\s*\(/);
+                    if (m) funcName = m[1].trim();
+                }
+
+                // Format: simple function name
+                if (!funcName && inThread) {
+                    m = line.match(/^([a-zA-Z_][\w:.]+(?:::[\w]+)*)/);
+                    if (m && m[1].length > 2) funcName = m[1].trim();
+                }
+
+                if (funcName) {
+                    funcName = funcName.replace(/\s*\[.*?\]/g, '').trim();
+                    if (funcName && funcName !== '??' && funcName !== '???') {
+                        currentStack.push(funcName);
+                    }
+                }
+            }
+
+            if (currentStack.length > 0) {
+                stacks.push(currentStack);
+            }
+
+            return stacks;
+        }
+
+        function stacksToFolded(stacks) {
+            const counter = {};
+            for (const stack of stacks) {
+                if (!stack.length) continue;
+                const key = [...stack].reverse().join(';');
+                counter[key] = (counter[key] || 0) + 1;
+            }
+
+            return Object.entries(counter)
+                .map(([stack, count]) => ({ stack, count }))
+                .sort((a, b) => b.count - a.count);
+        }
+
+        function foldedToD3Hierarchy(foldedData) {
+            const root = { name: 'all', value: 0, children: [] };
+
+            for (const entry of foldedData) {
+                const frames = entry.stack.split(';');
+                const count = entry.count;
+                let node = root;
+
+                for (const frame of frames) {
+                    let child = node.children.find(c => c.name === frame);
+                    if (!child) {
+                        child = { name: frame, value: 0, children: [] };
+                        node.children.push(child);
+                    }
+                    child.value += count;
+                    node = child;
+                }
+            }
+
+            // Clean up empty children
+            function cleanup(node) {
+                if (!node.children || node.children.length === 0) {
+                    delete node.children;
+                } else {
+                    node.children.forEach(cleanup);
+                }
+            }
+            cleanup(root);
+
+            root.value = foldedData.reduce((sum, e) => sum + e.count, 0);
+            return root;
+        }
+
+        // ========== TIMESTAMP PARSER ==========
+
+        function parseTimestampFromFilename(filename) {
+            const basename = filename.split('/').pop().split('\\').pop();
+            const m = basename.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2})h(\d{2})m(\d{2})s(\d+)ns([+-]\d{4})/);
+            if (!m) return null;
+
+            const [, year, month, day, hour, minute, second, , tzStr] = m;
+            const tzSign = tzStr[0] === '+' ? 1 : -1;
+            const tzHours = parseInt(tzStr.slice(1, 3));
+            const tzMinutes = parseInt(tzStr.slice(3, 5));
+            const tzOffsetMs = tzSign * (tzHours * 60 + tzMinutes) * 60 * 1000;
+
+            const utcMs = Date.UTC(
+                parseInt(year), parseInt(month) - 1, parseInt(day),
+                parseInt(hour), parseInt(minute), parseInt(second)
+            ) - tzOffsetMs;
+
+            return new Date(utcMs);
+        }
+
+        function isStackFile(filename) {
+            return filename.toLowerCase().endsWith('.out');
+        }
+
+        function formatTimestamp(date) {
+            return date.toISOString().replace('T', ' ').replace(/\.\d+Z$/, ' UTC');
+        }
+
+        // ========== FILE PROCESSING ==========
+
+        async function processFiles(fileList) {
+            const allStacks = [];
+            let fileCount = 0;
+            let skippedErr = 0;
+            const timestamps = [];
+            const progressEl = document.getElementById('progressText');
+
+            for (let i = 0; i < fileList.length; i++) {
+                const file = fileList[i];
+                const filename = file.name || '';
+                progressEl.textContent = `Processing file ${i + 1} of ${fileList.length}...`;
+
+                if (filename.toLowerCase().endsWith('.zip')) {
+                    // Handle ZIP files
+                    try {
+                        const arrayBuffer = await file.arrayBuffer();
+                        const zip = await JSZip.loadAsync(arrayBuffer);
+                        const entries = Object.entries(zip.files);
+                        let zipIdx = 0;
+
+                        for (const [name, zipEntry] of entries) {
+                            zipIdx++;
+                            if (zipEntry.dir) continue;
+
+                            if (!isStackFile(name)) {
+                                skippedErr++;
+                                continue;
+                            }
+
+                            progressEl.textContent = `Processing ZIP: ${zipIdx}/${entries.length} files...`;
+
+                            try {
+                                const text = await zipEntry.async('string');
+                                const stacks = parsePstackOutput(text);
+                                if (stacks.length > 0) {
+                                    allStacks.push(...stacks);
+                                    fileCount++;
+                                    const ts = parseTimestampFromFilename(name);
+                                    if (ts) timestamps.push(ts);
+                                }
+                            } catch (e) {
+                                continue;
+                            }
+                        }
+                    } catch (e) {
+                        throw new Error(`Invalid ZIP file: ${filename}`);
+                    }
+                } else if (filename.toLowerCase().endsWith('.tar.gz') || filename.toLowerCase().endsWith('.tgz')) {
+                    // Handle tar.gz — decompress with DecompressionStream if available, else skip
+                    try {
+                        const arrayBuffer = await file.arrayBuffer();
+                        // Try loading as ZIP first (some .tar.gz are actually zips)
+                        // For real tar.gz, we'll try the pako approach
+                        let text;
+                        try {
+                            // Try decompressing with the browser's DecompressionStream
+                            const ds = new DecompressionStream('gzip');
+                            const blob = new Blob([arrayBuffer]);
+                            const stream = blob.stream().pipeThrough(ds);
+                            const decompressed = await new Response(stream).arrayBuffer();
+                            // Parse tar format
+                            const files = parseTar(decompressed);
+                            for (const tarFile of files) {
+                                if (!isStackFile(tarFile.name)) {
+                                    skippedErr++;
+                                    continue;
+                                }
+                                const stacks = parsePstackOutput(tarFile.content);
+                                if (stacks.length > 0) {
+                                    allStacks.push(...stacks);
+                                    fileCount++;
+                                    const ts = parseTimestampFromFilename(tarFile.name);
+                                    if (ts) timestamps.push(ts);
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('tar.gz parsing failed:', e);
+                        }
+                    } catch (e) {
+                        throw new Error(`Error reading ${filename}: ${e.message}`);
+                    }
+                } else {
+                    // Regular file
+                    if (!isStackFile(filename)) {
+                        skippedErr++;
+                        continue;
+                    }
+
+                    try {
+                        const text = await file.text();
+                        const stacks = parsePstackOutput(text);
+                        if (stacks.length > 0) {
+                            allStacks.push(...stacks);
+                            fileCount++;
+                            const ts = parseTimestampFromFilename(filename);
+                            if (ts) timestamps.push(ts);
+                        }
+                    } catch (e) {
+                        throw new Error(`Error reading ${filename}: ${e.message}`);
+                    }
+                }
+            }
+
+            if (allStacks.length === 0) {
+                throw new Error(`No valid stack traces found in uploaded .out files. (${skippedErr} .err files were skipped)`);
+            }
+
+            progressEl.textContent = 'Building flamegraph...';
+
+            const folded = stacksToFolded(allStacks);
+            const hierarchy = foldedToD3Hierarchy(folded);
+
+            // Build time range
+            let timeRange = null;
+            if (timestamps.length > 0) {
+                timestamps.sort((a, b) => a - b);
+                const earliest = timestamps[0];
+                const latest = timestamps[timestamps.length - 1];
+                const durationSecs = Math.round((latest - earliest) / 1000);
+                timeRange = {
+                    earliest: formatTimestamp(earliest),
+                    latest: formatTimestamp(latest),
+                    duration_seconds: durationSecs,
+                    sample_count: timestamps.length,
+                };
+            }
+
+            return {
+                data: hierarchy,
+                stats: {
+                    files: fileCount,
+                    total_stacks: allStacks.length,
+                    unique_stacks: folded.length,
+                    skipped_err_files: skippedErr,
+                },
+                time_range: timeRange,
+            };
+        }
+
+        // ========== SIMPLE TAR PARSER ==========
+
+        function parseTar(buffer) {
+            const files = [];
+            const view = new Uint8Array(buffer);
+            let offset = 0;
+
+            while (offset < view.length - 512) {
+                // Read header
+                const header = view.slice(offset, offset + 512);
+
+                // Check for empty block (end of archive)
+                if (header.every(b => b === 0)) break;
+
+                // Extract filename (bytes 0-99)
+                let name = '';
+                for (let i = 0; i < 100 && header[i] !== 0; i++) {
+                    name += String.fromCharCode(header[i]);
+                }
+
+                // Check for prefix (bytes 345-499) for long names
+                let prefix = '';
+                for (let i = 345; i < 500 && header[i] !== 0; i++) {
+                    prefix += String.fromCharCode(header[i]);
+                }
+                if (prefix) name = prefix + '/' + name;
+
+                // Extract size (bytes 124-135, octal)
+                let sizeStr = '';
+                for (let i = 124; i < 136 && header[i] !== 0; i++) {
+                    sizeStr += String.fromCharCode(header[i]);
+                }
+                const size = parseInt(sizeStr.trim(), 8) || 0;
+
+                // Extract type (byte 156)
+                const type = String.fromCharCode(header[156]);
+
+                offset += 512; // Move past header
+
+                if (size > 0 && (type === '0' || type === '\0')) {
+                    // Regular file
+                    const content = new TextDecoder('utf-8', { fatal: false })
+                        .decode(view.slice(offset, offset + size));
+                    files.push({ name, content });
+                }
+
+                // Move past file content (padded to 512-byte blocks)
+                offset += Math.ceil(size / 512) * 512;
+            }
+
+            return files;
+        }
+
+        // ========== UI EVENT HANDLERS ==========
+
+        document.getElementById('fileInput').addEventListener('change', (e) => {
+            if (e.target.files.length > 0) uploadFiles(e.target.files);
+        });
+
+        const dropArea = document.getElementById('dropArea');
+
+        dropArea.addEventListener('click', () => {
+            document.getElementById('fileInput').click();
+        });
+
+        ['dragenter', 'dragover'].forEach(evt => {
+            dropArea.addEventListener(evt, (e) => {
+                e.preventDefault();
+                dropArea.classList.add('dragover');
+            });
+        });
+
+        ['dragleave', 'drop'].forEach(evt => {
+            dropArea.addEventListener(evt, (e) => {
+                e.preventDefault();
+                dropArea.classList.remove('dragover');
+            });
+        });
+
+        dropArea.addEventListener('drop', (e) => {
+            if (e.dataTransfer.files.length > 0) uploadFiles(e.dataTransfer.files);
+        });
+
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            if (flameChart) {
+                const term = e.target.value.trim();
+                if (term) {
+                    flameChart.search(term);
+                } else {
+                    flameChart.clear();
+                }
+            }
+        });
+
+        async function uploadFiles(files) {
+            // Show loading
+            document.getElementById('dropZone').style.display = 'none';
+            document.getElementById('loading').classList.add('visible');
+            document.getElementById('errorMsg').classList.remove('visible');
+            document.getElementById('flamegraph-container').classList.remove('visible');
+            document.getElementById('statsBar').classList.remove('visible');
+            document.getElementById('toolbar').classList.remove('visible');
+            document.getElementById('timeBar').style.display = 'none';
+            document.getElementById('progressText').textContent = '';
+
+            // Use setTimeout to let the UI update before heavy processing
+            await new Promise(r => setTimeout(r, 50));
+
+            try {
+                const data = await processFiles(files);
+
+                document.getElementById('loading').classList.remove('visible');
+
+                // Update stats
+                document.getElementById('statFiles').textContent = data.stats.files;
+                document.getElementById('statStacks').textContent = data.stats.total_stacks.toLocaleString();
+                document.getElementById('statUnique').textContent = data.stats.unique_stacks.toLocaleString();
+                document.getElementById('statsBar').classList.add('visible');
+                document.getElementById('toolbar').classList.add('visible');
+
+                // Show skipped .err files count
+                if (data.stats.skipped_err_files > 0) {
+                    document.getElementById('statSkippedCount').textContent = data.stats.skipped_err_files;
+                    document.getElementById('statSkipped').style.display = 'inline';
+                }
+
+                // Show time range if available
+                if (data.time_range) {
+                    document.getElementById('timeEarliest').textContent = data.time_range.earliest;
+                    document.getElementById('timeLatest').textContent = data.time_range.latest;
+                    document.getElementById('timeSamples').textContent = data.time_range.sample_count.toLocaleString();
+
+                    const secs = data.time_range.duration_seconds;
+                    let durStr;
+                    if (secs < 60) {
+                        durStr = secs + 's';
+                    } else if (secs < 3600) {
+                        durStr = Math.floor(secs / 60) + 'm ' + (secs % 60) + 's';
+                    } else {
+                        durStr = Math.floor(secs / 3600) + 'h ' + Math.floor((secs % 3600) / 60) + 'm ' + (secs % 60) + 's';
+                    }
+                    document.getElementById('timeDuration').textContent = durStr;
+                    document.getElementById('timeBar').style.display = 'flex';
+                }
+
+                renderFlamegraph(data.data);
+
+            } catch (err) {
+                document.getElementById('loading').classList.remove('visible');
+                showError(err.message);
+            }
+        }
+
+        function renderFlamegraph(data) {
+            const container = document.getElementById('flamegraph-container');
+            container.innerHTML = '';
+            container.classList.add('visible');
+
+            const width = container.clientWidth || window.innerWidth;
+
+            flameChart = flamegraph()
+                .width(width)
+                .cellHeight(20)
+                .transitionDuration(500)
+                .inverted(false)
+                .sort(true)
+                .title('')
+                .selfValue(false)
+                .setColorMapper(function(d) {
+                    if (!d.parent) return '#666';
+                    const depth = d.depth || 0;
+                    const r = 200 + Math.floor(Math.random() * 55);
+                    const g = 80 + Math.floor(Math.random() * 80 + depth * 3);
+                    const b = 20 + Math.floor(Math.random() * 30);
+                    return `rgb(${r},${g},${b})`;
+                });
+
+            d3.select('#flamegraph-container')
+                .datum(data)
+                .call(flameChart);
+
+            window.onresize = () => {
+                if (flameChart) {
+                    flameChart.width(container.clientWidth || window.innerWidth);
+                    d3.select('#flamegraph-container')
+                        .datum(data)
+                        .call(flameChart);
+                }
+            };
+        }
+
+        function resetZoom() {
+            if (flameChart) flameChart.resetZoom();
+        }
+
+        function clearSearch() {
+            document.getElementById('searchInput').value = '';
+            if (flameChart) flameChart.clear();
+        }
+
+        function downloadSVG() {
+            const svg = document.querySelector('#flamegraph-container svg');
+            if (!svg) return;
+
+            const clone = svg.cloneNode(true);
+            clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+
+            const serializer = new XMLSerializer();
+            const svgStr = serializer.serializeToString(clone);
+            const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'flamegraph.svg';
+            a.click();
+            URL.revokeObjectURL(a.href);
+        }
+
+        function resetAll() {
+            document.getElementById('flamegraph-container').classList.remove('visible');
+            document.getElementById('flamegraph-container').innerHTML = '';
+            document.getElementById('statsBar').classList.remove('visible');
+            document.getElementById('toolbar').classList.remove('visible');
+            document.getElementById('errorMsg').classList.remove('visible');
+            document.getElementById('timeBar').style.display = 'none';
+            document.getElementById('statSkipped').style.display = 'none';
+            document.getElementById('dropZone').style.display = 'flex';
+            document.getElementById('searchInput').value = '';
+            document.getElementById('fileInput').value = '';
+            flameChart = null;
+        }
+
+        function showError(msg) {
+            const el = document.getElementById('errorMsg');
+            el.textContent = msg;
+            el.classList.add('visible');
+            document.getElementById('dropZone').style.display = 'flex';
+        }
+    </script>
+</body>
+</html>

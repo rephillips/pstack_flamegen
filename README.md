@@ -1,19 +1,19 @@
 # pstack_flamegen
 
-A web app that generates interactive flamegraph SVGs from raw pstack samples. Built for support engineers who need to quickly visualize hundreds of pstack captures.
+A zero-dependency browser app that generates interactive flamegraph SVGs from raw pstack samples. Built for support engineers who need to quickly visualize hundreds of pstack captures.
+
+**No installation required** — just open `index.html` in your browser. All processing happens locally in the browser; no data leaves your machine.
 
 ## Features
 
-- **Drag-and-drop upload** — drop individual pstack files or a ZIP archive
+- **Zero setup** — single HTML file, no server, no Python, no dependencies to install
+- **Drag-and-drop upload** — drop individual `.out` files, ZIP archives, or tar.gz files
 - **Interactive flamegraph** — zoom, search, and hover for details (powered by d3-flame-graph)
 - **SVG download** — export the flamegraph as an SVG file
+- **Time range display** — automatically detects timestamps from collect-stacks.sh filenames and shows earliest/latest collection time and duration
+- **Smart filtering** — automatically skips `.err` files, only processes `.out` files
 - **Multi-format parsing** — supports Linux pstack, GDB backtrace, and jstack output
 - **Dark theme UI**
-
-## Requirements
-
-- Python 3.8+
-- Flask
 
 ## Quick Start
 
@@ -22,26 +22,27 @@ A web app that generates interactive flamegraph SVGs from raw pstack samples. Bu
 git clone https://github.com/rephillips/pstack_flamegen.git
 cd pstack_flamegen
 
-# Install dependencies
-pip install -r requirements.txt
-
-# Start the app
-python3 app.py
+# Open in your browser
+open index.html        # macOS
+xdg-open index.html    # Linux
+start index.html       # Windows
 ```
 
-Open your browser to **http://localhost:5050**
+That's it. No `pip install`, no server to run.
 
 ## Usage
 
-1. Open the app in your browser
-2. Drag and drop your pstack sample files onto the upload area (or click to browse)
-   - Supports individual `.txt`, `.log`, `.out`, `.pstack`, `.trace` files
+1. Open `index.html` in your browser
+2. Drag and drop your pstack `.out` files onto the upload area (or click to browse)
+   - Supports individual `.out` files from collect-stacks.sh
    - Supports `.zip` archives containing multiple pstack files
+   - Supports `.tar.gz` archives
+   - `.err` files are automatically filtered out
 3. The flamegraph renders automatically after upload
 4. **Search** — type a function name in the search bar to highlight matching frames
 5. **Zoom** — click any frame to zoom into that subtree
 6. **Reset Zoom** — click the Reset Zoom button to return to the full view
-7. **Download SVG** — click Download SVG to save the flamegraph
+7. **Download SVG** — click Download SVG to save the flamegraph as a file
 8. **New Upload** — click New Upload to start over with different files
 
 ## Collecting Pstacks on Splunk Enterprise
@@ -94,7 +95,7 @@ This repo includes the `collect-stacks.sh` script for collecting pstack samples 
    tar -zcvf archive-name.tar.gz source-directory-name
    ```
 
-   > **Note:** It is normal to see `.err` files for each `.out` file.
+   > **Note:** It is normal to see `.err` files for each `.out` file. The flamegraph generator automatically skips `.err` files.
 
 7. **SCP from cloud instance to local machine:**
 
@@ -109,13 +110,13 @@ This repo includes the `collect-stacks.sh` script for collecting pstack samples 
    ./splunk diag
    ```
 
-9. **Upload the `.out` files to the Flamegraph Generator** to visualize the results.
+9. **Upload the archive or `.out` files to the Flamegraph Generator** to visualize the results.
 
 ## Sample Data
 
 The `sample_data/` directory contains 500 synthetic pstack samples modeled after Splunk Enterprise thread stacks. Use these to test the app:
 
-1. Start the app with `python3 app.py`
+1. Open `index.html` in your browser
 2. Select all files in `sample_data/` and drag them onto the upload area
 3. Or zip them first: `cd sample_data && zip ../samples.zip *.txt && cd ..` then upload the ZIP
 
@@ -135,12 +136,6 @@ Thread 1 (Thread 0x7f4b2c0d0700 (LWP 12345)):
    at com.example.App.processRequest(App.java:42)
    at com.example.App.main(App.java:10)
 ```
-
-## Configuration
-
-| Environment Variable | Default | Description |
-|---|---|---|
-| `PORT` | `5050` | Port to run the web server on |
 
 ## License
 
