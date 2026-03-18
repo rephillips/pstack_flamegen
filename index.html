@@ -460,7 +460,7 @@
         <input type="text" id="searchInput" placeholder="Search functions... (e.g. malloc, pthread)">
         <button class="btn" id="resetZoomBtn" onclick="resetZoom()">Reset Zoom</button>
         <button class="btn" id="clearSearchBtn" onclick="clearSearch()">Clear Search</button>
-        <button class="btn" onclick="downloadSVG()">Download SVG</button>
+        <button class="btn" onclick="downloadInteractiveHTML()">Download Interactive HTML</button>
         <button class="btn" onclick="resetAll()">New Upload</button>
     </div>
 
@@ -933,6 +933,7 @@
         });
 
         let totalSamples = 0;
+        let currentFlamegraphData = null;
 
         document.getElementById('searchInput').addEventListener('input', (e) => {
             if (flameChart) {
@@ -1029,6 +1030,7 @@
             container.classList.add('visible');
 
             totalSamples = data.value || 0;
+            currentFlamegraphData = data;
 
             const statusBar = document.getElementById('statusBar');
             statusBar.classList.add('visible');
@@ -1273,20 +1275,89 @@
             if (flameChart) flameChart.clear();
         }
 
-        function downloadSVG() {
-            const svg = document.querySelector('#flamegraph-container svg');
-            if (!svg) return;
+        function downloadInteractiveHTML() {
+            if (!currentFlamegraphData) return;
 
-            const clone = svg.cloneNode(true);
-            clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+            const dataJson = JSON.stringify(currentFlamegraphData);
+            const total = totalSamples;
 
-            const serializer = new XMLSerializer();
-            const svgStr = serializer.serializeToString(clone);
-            const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+            const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flamegraph</title>
+<script src="https://d3js.org/d3.v7.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/d3-flame-graph@4.1.3/dist/d3-flamegraph.min.js"><\/script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/d3-flame-graph@4.1.3/dist/d3-flamegraph.css">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; }
+.header { background: #16213e; border-bottom: 2px solid #0f3460; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
+.header h1 { font-size: 20px; color: #00c853; }
+.header .info { color: #888; font-size: 13px; }
+.toolbar { background: #1a1a2e; padding: 10px 24px; display: flex; gap: 10px; align-items: center; border-bottom: 1px solid #0f3460; }
+.toolbar input { background: #16213e; border: 1px solid #0f3460; color: #e0e0e0; padding: 8px 12px; border-radius: 6px; font-size: 14px; flex: 1; max-width: 400px; outline: none; }
+.toolbar input:focus { border-color: #00c853; }
+.toolbar input::placeholder { color: #555; }
+.btn { padding: 8px 16px; border-radius: 6px; border: 1px solid #0f3460; background: #16213e; color: #e0e0e0; cursor: pointer; font-size: 13px; }
+.btn:hover { background: #0f3460; border-color: #00c853; }
+#chart { background: #1a1a2e; }
+#chart .d3-flame-graph-label { fill: #e0e0e0 !important; }
+#chart .d3-flame-graph rect { stroke: #444; stroke-width: 0.5px; }
+.status { background: #111; border-top: 1px solid #333; padding: 8px 24px; font-size: 13px; font-family: monospace; color: #ccc; position: sticky; bottom: 0; display: flex; gap: 20px; }
+.status .fn { color: #00c853; font-weight: 600; }
+.status .s { color: #ffab40; }
+.status .p { color: #40c4ff; }
+.d3-flame-graph-tip { background: #222 !important; color: #eee !important; border: 1px solid #444 !important; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Flamegraph</h1>
+  <div class="info">${total.toLocaleString()} total samples</div>
+</div>
+<div class="toolbar">
+  <input type="text" id="search" placeholder="Search functions...">
+  <button class="btn" onclick="chart.resetZoom()">Reset Zoom</button>
+  <button class="btn" onclick="document.getElementById('search').value='';chart.clear()">Clear</button>
+</div>
+<div id="chart"></div>
+<div class="status">
+  <span class="fn" id="sf">-</span>
+  <span class="s" id="ss"></span>
+  <span class="p" id="sp"></span>
+</div>
+<script>
+var data = ${dataJson};
+var total = ${total};
+var chart = flamegraph().width(document.body.clientWidth).cellHeight(18).transitionDuration(300).sort(true).title('').selfValue(false);
+d3.select('#chart').datum(data).call(chart);
+setTimeout(function(){
+  d3.select('#chart').selectAll('rect').on('mouseover',function(){
+    var d=d3.select(this).datum();
+    if(d){
+      var n=(d.data||d).name||'?', v=(d.data||d).value||0;
+      var p=total>0?((v/total)*100).toFixed(2):'0';
+      document.getElementById('sf').textContent=n;
+      document.getElementById('ss').textContent=v.toLocaleString()+' samples';
+      document.getElementById('sp').textContent='('+p+'%)';
+    }
+  });
+},500);
+document.getElementById('search').addEventListener('input',function(e){
+  var t=e.target.value.trim();
+  if(t){chart.search(t)}else{chart.clear()}
+});
+window.onresize=function(){chart.width(document.body.clientWidth);d3.select('#chart').datum(data).call(chart)};
+<\/script>
+</body>
+</html>`;
 
+            const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = 'flamegraph.svg';
+            a.download = 'flamegraph.html';
             a.click();
             URL.revokeObjectURL(a.href);
         }
@@ -1310,6 +1381,7 @@
             if (guide) guide.innerHTML = '';
             flameChart = null;
             totalSamples = 0;
+            currentFlamegraphData = null;
         }
 
         function showError(msg) {
