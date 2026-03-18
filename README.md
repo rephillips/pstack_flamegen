@@ -118,7 +118,7 @@ The `sample_data/` directory contains 500 synthetic pstack samples modeled after
 
 1. Open `index.html` in your browser
 2. Select all files in `sample_data/` and drag them onto the upload area
-3. Or zip them first: `cd sample_data && zip ../samples.zip *.txt && cd ..` then upload the ZIP
+3. Or zip them first: `cd sample_data && zip ../samples.zip *.out && cd ..` then upload the ZIP
 
 ## Supported Pstack Formats
 
