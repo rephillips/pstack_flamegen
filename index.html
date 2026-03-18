@@ -993,15 +993,6 @@
 
             const width = container.clientWidth || window.innerWidth;
 
-            // Custom tooltip showing name, samples, and percentage
-            const tip = flamegraph.tooltip.defaultFlamegraphTooltip()
-                .html(function(d) {
-                    const name = d.data.name || d.name || '?';
-                    const value = d.data.value || d.value || 0;
-                    const pct = totalSamples > 0 ? ((value / totalSamples) * 100).toFixed(2) : '0.00';
-                    return `<b>${name}</b><br>${value.toLocaleString()} samples (${pct}% of total)`;
-                });
-
             flameChart = flamegraph()
                 .width(width)
                 .cellHeight(22)
@@ -1010,7 +1001,12 @@
                 .sort(true)
                 .title('')
                 .selfValue(false)
-                .tooltip(tip)
+                .setLabelHandler(function(d) {
+                    const name = d.data.name || '?';
+                    const value = d.data.value || 0;
+                    const pct = totalSamples > 0 ? ((value / totalSamples) * 100).toFixed(1) : '0.0';
+                    return `${name} (${pct}%)`;
+                })
                 .onClick(function(d) {
                     // Update status bar on click/zoom
                     updateStatusBar(d);
