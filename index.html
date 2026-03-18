@@ -528,7 +528,11 @@
                 const line = rawLine.trim();
 
                 // Detect thread boundaries
-                if (/^Thread \d+/.test(line) ||
+                // eu-stack: "TID 2148212:"
+                // pstack: "Thread 1 (Thread 0x7f...):"
+                // jstack: "\"main\" #1 prio=5"
+                if (/^TID\s+\d+/i.test(line) ||
+                    /^Thread \d+/.test(line) ||
                     /^#\d+\s+(daemon\s+)?prio=/.test(line) ||
                     /^".*"\s+#?\d+/.test(line) ||
                     /^-{3,}\s+lwp/i.test(line) ||
@@ -554,32 +558,69 @@
                 // Parse stack frames
                 let funcName = null;
 
-                // Format: #N  0x... in func_name () from /lib/...
-                let m = line.match(/^#\d+\s+0x[0-9a-fA-F]+\s+in\s+(.+?)(?:\s*\(.*?\))?\s*(?:from\s+|at\s+|$)/);
+                // eu-stack format: #N  0x00007f5fe9361170 __lll_lock_wait
+                // eu-stack format: #N  0x000055caea74e100  (address only, no name)
+                // eu-stack with args: #N  0x... WorkloadManager::isWorkloadMgmtEnabled() const
+                // pstack format: #N  0x... in func_name () from /lib/...
+                let m;
+
+                // First try: #N  0x... in func_name (pstack/gdb style with "in")
+                m = line.match(/^#\d+\s+0x[0-9a-fA-F]+\s+in\s+(.+?)(?:\s*\(.*?\))?\s*(?:from\s+|at\s+|$)/);
                 if (m) funcName = m[1].trim();
 
-                // Format: #N  func_name (args) at file.c:123
+                // Second try: #N  0x<addr> <funcname> (eu-stack style, no "in")
+                // Captures everything after the hex address that looks like a function
                 if (!funcName) {
-                    m = line.match(/^#\d+\s+(?:0x[0-9a-fA-F]+\s+in\s+)?(.+?)\s*\(/);
+                    m = line.match(/^#\d+\s+0x[0-9a-fA-F]+\s+((?:non-virtual thunk to\s+)?[a-zA-Z_][\w:~<>*&, ]*(?:\(.*\))?(?:\s+const)?)/);
+                    if (m) {
+                        funcName = m[1].trim();
+                        // Remove trailing offset like +0x4a
+                        funcName = funcName.replace(/\+0x[0-9a-fA-F]+$/, '').trim();
+                        // Simplify "non-virtual thunk to X" -> "X"
+                        funcName = funcName.replace(/^non-virtual thunk to\s+/, '').trim();
+                    }
+                }
+
+                // Handle address-only frames: #N  0x<addr> (no function name)
+                if (!funcName && inThread) {
+                    m = line.match(/^#\d+\s+(0x[0-9a-fA-F]+)\s*$/);
+                    if (m) {
+                        currentStack.push('[unknown]');
+                        continue;
+                    }
+                }
+
+                // Third try: #N  func_name (args) at file.c:123 (gdb style without address)
+                if (!funcName) {
+                    m = line.match(/^#\d+\s+(?:0x[0-9a-fA-F]+\s+in\s+)?([a-zA-Z_][\w:~<>*& ]+)\s*\(/);
                     if (m) funcName = m[1].trim();
                 }
 
-                // Format: at com.example.Class.method(File.java:123)  (jstack)
+                // Fourth: at com.example.Class.method(File.java:123)  (jstack)
                 if (!funcName) {
                     m = line.match(/^\s*at\s+(.+?)\s*\(/);
                     if (m) funcName = m[1].trim();
                 }
 
-                // Format: simple function name
+                // Fifth: simple function name on its own line
                 if (!funcName && inThread) {
                     m = line.match(/^([a-zA-Z_][\w:.]+(?:::[\w]+)*)/);
                     if (m && m[1].length > 2) funcName = m[1].trim();
                 }
 
+                // Skip lines that are just hex addresses with no function name
                 if (funcName) {
                     funcName = funcName.replace(/\s*\[.*?\]/g, '').trim();
-                    if (funcName && funcName !== '??' && funcName !== '???') {
+                    // Skip if it's just a hex address or garbage
+                    if (funcName && funcName !== '??' && funcName !== '???' &&
+                        !/^0x[0-9a-fA-F]+$/.test(funcName)) {
                         currentStack.push(funcName);
+                    } else if (inThread) {
+                        // For address-only frames, use the address as a placeholder
+                        const addrMatch = line.match(/0x([0-9a-fA-F]+)/);
+                        if (addrMatch) {
+                            currentStack.push('[0x' + addrMatch[1].slice(-8) + ']');
+                        }
                     }
                 }
             }
@@ -995,48 +1036,27 @@
 
             flameChart = flamegraph()
                 .width(width)
-                .cellHeight(22)
-                .transitionDuration(500)
-                .inverted(false)
+                .cellHeight(18)
+                .transitionDuration(300)
                 .sort(true)
                 .title('')
-                .selfValue(false)
-                .label(function(d) {
-                    const name = d.data.name || '?';
-                    const value = d.data.value || 0;
-                    const pct = totalSamples > 0 ? ((value / totalSamples) * 100).toFixed(1) : '0.0';
-                    return `${name} (${pct}%, ${value.toLocaleString()} samples)`;
-                })
-                .onClick(function(d) {
-                    // Update status bar on click/zoom
-                    updateStatusBar(d);
-                })
-                .setColorMapper(function(d) {
-                    if (!d.parent) return '#666';
-                    const name = (d.data && d.data.name) || '';
-                    // Color by function type for better readability
-                    if (/^(pthread_|__pthread)/.test(name)) return '#5c6bc0';  // purple for pthread
-                    if (/^(malloc|free|realloc|calloc|mmap|brk)/.test(name)) return '#ef5350';  // red for memory
-                    if (/^(read|write|send|recv|poll|epoll|select|accept|connect|socket)/.test(name)) return '#42a5f5';  // blue for I/O
-                    if (/^(SSL_|OpenSSL|TLS)/.test(name)) return '#26c6da';  // cyan for SSL
-                    if (/^(std::)/.test(name)) return '#ab47bc';  // purple for stdlib
-                    // Default warm colors
-                    const depth = d.depth || 0;
-                    const r = 200 + Math.floor(Math.random() * 55);
-                    const g = 80 + Math.floor(Math.random() * 80 + depth * 3);
-                    const b = 20 + Math.floor(Math.random() * 30);
-                    return `rgb(${r},${g},${b})`;
-                });
+                .selfValue(false);
 
             d3.select('#flamegraph-container')
                 .datum(data)
                 .call(flameChart);
 
-            // Add mouseover handler for status bar
-            d3.select('#flamegraph-container').selectAll('rect').on('mouseover', function() {
-                const d = d3.select(this).datum();
-                if (d) updateStatusBar(d);
-            });
+            // Add mouseover handler for status bar (use timeout to wait for render)
+            setTimeout(() => {
+                d3.select('#flamegraph-container').selectAll('g.d3-flame-graph-label').on('mouseover', function() {
+                    const d = d3.select(this).datum();
+                    if (d) updateStatusBar(d);
+                });
+                d3.select('#flamegraph-container').selectAll('rect').on('mouseover', function() {
+                    const d = d3.select(this).datum();
+                    if (d) updateStatusBar(d);
+                });
+            }, 500);
 
             // Show analysis panel and guide
             showAnalysis(data);
