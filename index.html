@@ -1001,11 +1001,11 @@
                 .sort(true)
                 .title('')
                 .selfValue(false)
-                .setLabelHandler(function(d) {
+                .label(function(d) {
                     const name = d.data.name || '?';
                     const value = d.data.value || 0;
                     const pct = totalSamples > 0 ? ((value / totalSamples) * 100).toFixed(1) : '0.0';
-                    return `${name} (${pct}%)`;
+                    return `${name} (${pct}%, ${value.toLocaleString()} samples)`;
                 })
                 .onClick(function(d) {
                     // Update status bar on click/zoom
