@@ -793,7 +793,15 @@
         }
 
         function isStackFile(filename) {
-            return filename.toLowerCase().endsWith('.out');
+            if (!filename.toLowerCase().endsWith('.out')) return false;
+            // Only process eu-stack output files (stack-*.out)
+            // Skip proc-stack, proc-status, proc-maps which are /proc/<pid> data
+            const basename = filename.split('/').pop().split('\\').pop().toLowerCase();
+            if (basename.startsWith('proc-')) return false;
+            if (basename === 'proc-maps.out') return false;
+            // Must contain 'stack' in the name to be a stack dump file
+            if (!basename.includes('stack')) return false;
+            return true;
         }
 
         function formatTimestamp(date) {
