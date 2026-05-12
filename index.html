@@ -220,11 +220,15 @@
             padding: 0;
             background: var(--flamegraph-bg);
             min-height: 400px;
+            width: 100%;
+            overflow-x: hidden;
         }
 
         #flamegraph-container.visible { display: block; }
         #flamegraph-container .d3-flame-graph rect { stroke: var(--flamegraph-stroke); stroke-width: 0.5px; }
         #flamegraph-container .d3-flame-graph-label { fill: var(--text-primary) !important; }
+        #flamegraph-container .d3-flame-graph .searching .highlight rect { fill: #9c27b0 !important; }
+        #flamegraph-container .d3-flame-graph .searching .highlight .d3-flame-graph-label { fill: #fff !important; }
 
         .loading {
             display: none;
@@ -578,10 +582,11 @@
     </div>
 
     <div class="stats-bar" id="statsBar">
+        <span class="stat" id="statFolder" style="display:none">📁 <strong id="statFolderName"></strong></span>
         <span class="stat"><strong id="statFiles">0</strong> files processed</span>
         <span class="stat"><strong id="statStacks">0</strong> total stacks</span>
         <span class="stat"><strong id="statUnique">0</strong> unique stacks</span>
-        <span class="stat" id="statSkipped" style="display:none"><strong id="statSkippedCount">0</strong> .err files skipped</span>
+        <span class="stat" id="statSkipped" style="display:none"><strong id="statSkippedCount">0</strong> non-stack files skipped</span>
     </div>
 
     <div class="stats-bar" id="timeBar" style="display:none; border-top:0; padding-top:0;">
@@ -1087,7 +1092,11 @@
         // ========== UI EVENT HANDLERS ==========
 
         document.getElementById('fileInput').addEventListener('change', (e) => {
-            if (e.target.files.length > 0) uploadFiles(e.target.files);
+            if (e.target.files.length > 0) {
+                const rel = e.target.files[0].webkitRelativePath;
+                const folderName = rel ? rel.split('/')[0] : null;
+                uploadFiles(e.target.files, folderName);
+            }
         });
 
         const dropArea = document.getElementById('dropArea');
@@ -1118,13 +1127,17 @@
             log(`drop: ${items.length} top-level item(s)`);
             const files = [];
             const promises = [];
+            let folderName = null;
             for (let i = 0; i < items.length; i++) {
                 const entry = items[i].webkitGetAsEntry ? items[i].webkitGetAsEntry() : null;
-                if (entry) promises.push(collectFiles(entry, files));
+                if (entry) {
+                    if (entry.isDirectory && !folderName) folderName = entry.name;
+                    promises.push(collectFiles(entry, files));
+                }
             }
             await Promise.all(promises);
             log(`drop: ${files.length} file(s) collected after folder traversal`);
-            if (files.length > 0) uploadFiles(files);
+            if (files.length > 0) uploadFiles(files, folderName);
         });
 
         async function collectFiles(entry, files) {
@@ -1178,7 +1191,7 @@
             }
         });
 
-        async function uploadFiles(files) {
+        async function uploadFiles(files, folderName) {
             // Show loading
             document.getElementById('dropZone').style.display = 'none';
             document.getElementById('loading').classList.add('visible');
@@ -1205,6 +1218,10 @@
                 document.getElementById('statFiles').textContent = data.stats.files;
                 document.getElementById('statStacks').textContent = data.stats.total_stacks.toLocaleString();
                 document.getElementById('statUnique').textContent = data.stats.unique_stacks.toLocaleString();
+                if (folderName) {
+                    document.getElementById('statFolderName').textContent = folderName;
+                    document.getElementById('statFolder').style.display = 'inline';
+                }
                 document.getElementById('statsBar').classList.add('visible');
                 document.getElementById('toolbar').classList.add('visible');
 
@@ -1283,14 +1300,18 @@
             if (currentFoldedStacks) showTopStacks(currentFoldedStacks);
             showGuide();
 
-            window.onresize = () => {
-                if (flameChart) {
-                    flameChart.width(container.clientWidth || window.innerWidth);
-                    d3.select('#flamegraph-container')
-                        .datum(data)
-                        .call(flameChart);
-                }
-            };
+            if (window._flamegraphResizeObserver) window._flamegraphResizeObserver.disconnect();
+            let resizeTimer;
+            window._flamegraphResizeObserver = new ResizeObserver(() => {
+                clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(() => {
+                    if (flameChart) {
+                        flameChart.width(container.clientWidth);
+                        d3.select('#flamegraph-container').datum(data).call(flameChart);
+                    }
+                }, 150);
+            });
+            window._flamegraphResizeObserver.observe(container);
         }
 
         function updateStatusBar(d) {
@@ -1828,6 +1849,7 @@ document.querySelectorAll('.guide-panel h3').forEach(function(h){
             document.getElementById('errorMsg').classList.remove('visible');
             document.getElementById('timeBar').style.display = 'none';
             document.getElementById('statSkipped').style.display = 'none';
+            document.getElementById('statFolder').style.display = 'none';
             document.getElementById('statusBar').classList.remove('visible');
             document.getElementById('searchResultBar').classList.remove('visible');
             document.getElementById('dropZone').style.display = 'flex';
@@ -1839,6 +1861,10 @@ document.querySelectorAll('.guide-panel h3').forEach(function(h){
             if (stacks) stacks.innerHTML = '';
             const guide = document.getElementById('guidePanel');
             if (guide) guide.innerHTML = '';
+            if (window._flamegraphResizeObserver) {
+                window._flamegraphResizeObserver.disconnect();
+                window._flamegraphResizeObserver = null;
+            }
             flameChart = null;
             totalSamples = 0;
             currentFlamegraphData = null;
