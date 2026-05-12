@@ -229,6 +229,10 @@
         #flamegraph-container .d3-flame-graph-label { fill: var(--text-primary) !important; }
         #flamegraph-container .d3-flame-graph .searching .highlight rect { fill: #9c27b0 !important; }
         #flamegraph-container .d3-flame-graph .searching .highlight .d3-flame-graph-label { fill: #fff !important; }
+        #flamegraph-container .d3-flame-graph .searching .highlight.current-match rect { fill: #e040fb !important; stroke: #fff !important; stroke-width: 1.5px !important; }
+
+        .search-result-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .search-nav-btn { padding: 2px 10px; font-size: 12px; line-height: 1.6; }
 
         .loading {
             display: none;
@@ -1160,36 +1164,56 @@
         let currentFlamegraphData = null;
         let currentStats = null;
         let currentFoldedStacks = null;
+        let searchMatches = [];
+        let searchMatchIndex = -1;
+        let currentSearchTerm = '';
 
         document.getElementById('searchInput').addEventListener('input', (e) => {
-            if (flameChart) {
-                const term = e.target.value.trim();
-                const searchBar = document.getElementById('searchResultBar');
-                if (term) {
-                    flameChart.search(term);
-                    // Calculate cumulative percentage of matching frames
-                    setTimeout(() => {
-                        const matched = document.querySelectorAll('#flamegraph-container rect[style*="opacity: 1"]');
-                        const faded = document.querySelectorAll('#flamegraph-container rect[style*="opacity: 0.4"]');
-                        if (matched.length > 0 && totalSamples > 0) {
-                            // Sum up the values of matched leaf nodes
-                            let matchedSamples = 0;
-                            matched.forEach(rect => {
-                                const d = d3.select(rect).datum();
-                                if (d && d.data) matchedSamples += (d.data.value || d.value || 0);
-                            });
-                            // Use search results from d3-flame-graph
-                            const pct = ((matchedSamples / totalSamples) * 100).toFixed(1);
-                            searchBar.innerHTML = `Search: <strong>"${term}"</strong> — ${matched.length} matching frames`;
-                            searchBar.classList.add('visible');
-                        }
-                    }, 100);
-                } else {
-                    flameChart.clear();
-                    searchBar.classList.remove('visible');
-                }
+            if (!flameChart) return;
+            const term = e.target.value.trim();
+            currentSearchTerm = term;
+            if (term) {
+                flameChart.search(term);
+                setTimeout(() => {
+                    searchMatches = Array.from(document.querySelectorAll('#flamegraph-container .highlight'));
+                    searchMatchIndex = searchMatches.length > 0 ? 0 : -1;
+                    renderSearchBar();
+                    if (searchMatchIndex >= 0) navigateToMatch(0);
+                }, 100);
+            } else {
+                clearSearch();
             }
         });
+
+        function navigateToMatch(idx) {
+            document.querySelectorAll('#flamegraph-container .current-match')
+                .forEach(el => el.classList.remove('current-match'));
+            if (!searchMatches.length) return;
+            searchMatchIndex = ((idx % searchMatches.length) + searchMatches.length) % searchMatches.length;
+            const el = searchMatches[searchMatchIndex];
+            el.classList.add('current-match');
+            const rect = el.getBoundingClientRect();
+            const targetY = window.scrollY + rect.top + rect.height / 2 - window.innerHeight / 2;
+            window.scrollTo({ top: Math.max(0, targetY), behavior: 'smooth' });
+            renderSearchBar();
+        }
+
+        function renderSearchBar() {
+            const bar = document.getElementById('searchResultBar');
+            const count = searchMatches.length;
+            const current = searchMatchIndex >= 0 ? searchMatchIndex + 1 : 0;
+            if (!currentSearchTerm) { bar.classList.remove('visible'); return; }
+            if (count === 0) {
+                bar.innerHTML = `No matches for "<strong>${escapeHtml(currentSearchTerm)}</strong>"`;
+            } else {
+                bar.innerHTML = `
+                    <strong>${count}</strong> match${count !== 1 ? 'es' : ''} for "<strong>${escapeHtml(currentSearchTerm)}</strong>"
+                    <span style="color:var(--text-muted)">${current} of ${count}</span>
+                    <button class="btn search-nav-btn" onclick="navigateToMatch(${searchMatchIndex - 1})">◀ Prev</button>
+                    <button class="btn search-nav-btn" onclick="navigateToMatch(${searchMatchIndex + 1})">Next ▶</button>`;
+            }
+            bar.classList.add('visible');
+        }
 
         async function uploadFiles(files, folderName) {
             // Show loading
@@ -1269,10 +1293,12 @@
             const statusBar = document.getElementById('statusBar');
             statusBar.classList.add('visible');
 
-            const width = container.clientWidth || window.innerWidth;
+            function chartWidth() {
+                return container.clientWidth || document.documentElement.clientWidth;
+            }
 
             flameChart = flamegraph()
-                .width(width)
+                .width(chartWidth())
                 .cellHeight(18)
                 .transitionDuration(300)
                 .sort(true)
@@ -1300,16 +1326,25 @@
             if (currentFoldedStacks) showTopStacks(currentFoldedStacks);
             showGuide();
 
+            // Re-fit after panels are added — they may trigger a scrollbar that narrows the viewport
+            requestAnimationFrame(() => {
+                const w = chartWidth();
+                if (flameChart && w !== flameChart.width()) {
+                    flameChart.width(w);
+                    d3.select('#flamegraph-container').datum(data).call(flameChart);
+                }
+            });
+
             if (window._flamegraphResizeObserver) window._flamegraphResizeObserver.disconnect();
             let resizeTimer;
             window._flamegraphResizeObserver = new ResizeObserver(() => {
                 clearTimeout(resizeTimer);
                 resizeTimer = setTimeout(() => {
                     if (flameChart) {
-                        flameChart.width(container.clientWidth);
+                        flameChart.width(chartWidth());
                         d3.select('#flamegraph-container').datum(data).call(flameChart);
                     }
-                }, 150);
+                }, 100);
             });
             window._flamegraphResizeObserver.observe(container);
         }
@@ -1652,6 +1687,10 @@
 
         function clearSearch() {
             document.getElementById('searchInput').value = '';
+            document.getElementById('searchResultBar').classList.remove('visible');
+            searchMatches = [];
+            searchMatchIndex = -1;
+            currentSearchTerm = '';
             if (flameChart) flameChart.clear();
         }
 
@@ -1854,7 +1893,11 @@ document.querySelectorAll('.guide-panel h3').forEach(function(h){
             document.getElementById('searchResultBar').classList.remove('visible');
             document.getElementById('dropZone').style.display = 'flex';
             document.getElementById('searchInput').value = '';
+            document.getElementById('searchResultBar').classList.remove('visible');
             document.getElementById('fileInput').value = '';
+            searchMatches = [];
+            searchMatchIndex = -1;
+            currentSearchTerm = '';
             const analysis = document.getElementById('analysisPanel');
             if (analysis) analysis.innerHTML = '';
             const stacks = document.getElementById('stacksPanel');
