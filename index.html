@@ -722,18 +722,30 @@
                     m = line.match(/^#\d+\s+0x[0-9a-fA-F]+\s+((?:non-virtual thunk to\s+)?[a-zA-Z_][\w:~<>*&, ]*(?:\(.*\))?(?:\s+const)?)/);
                     if (m) {
                         funcName = m[1].trim();
-                        // Remove trailing offset like +0x4a
                         funcName = funcName.replace(/\+0x[0-9a-fA-F]+$/, '').trim();
-                        // Simplify "non-virtual thunk to X" -> "X"
                         funcName = funcName.replace(/^non-virtual thunk to\s+/, '').trim();
                     }
                 }
 
-                // Handle address-only frames: #N  0x<addr> (no function name)
+                // Permissive fallback for eu-stack: catches (anonymous namespace)::func,
+                // lambdas (main::{lambda()#1}::operator()()), @@GLIBC versioning, etc.
+                if (!funcName) {
+                    m = line.match(/^#\d+\s+0x[0-9a-fA-F]+\s+(\S.*?)(?:\s*\+0x[0-9a-fA-F]+)?\s*$/);
+                    if (m) {
+                        const candidate = m[1].trim();
+                        if (!/^0x[0-9a-fA-F]+$/.test(candidate) &&
+                            candidate !== '??' && candidate !== '???') {
+                            funcName = candidate.replace(/^non-virtual thunk to\s+/, '').trim();
+                        }
+                    }
+                }
+
+                // Handle address-only frames: #N  0x<addr> with no function name at all
                 if (!funcName && inThread) {
                     m = line.match(/^#\d+\s+(0x[0-9a-fA-F]+)\s*$/);
                     if (m) {
-                        currentStack.push('[unknown]');
+                        log('unresolved frame (stripped symbol):', line.trim());
+                        currentStack.push('[0x' + m[1].slice(-8) + ']');
                         continue;
                     }
                 }
@@ -754,6 +766,11 @@
                 if (!funcName && inThread) {
                     m = line.match(/^([a-zA-Z_][\w:.]+(?:::[\w]+)*)/);
                     if (m && m[1].length > 2) funcName = m[1].trim();
+                }
+
+                // Log any #N frame line we couldn't extract a name from
+                if (!funcName && inThread && /^#\d+/.test(line)) {
+                    log('unparseable frame:', line.trim());
                 }
 
                 // Skip lines that are just hex addresses with no function name
