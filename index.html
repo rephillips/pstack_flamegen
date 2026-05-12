@@ -527,9 +527,10 @@
             <div class="subtitle">Upload pstack samples to generate interactive flamegraphs — runs entirely in your browser</div>
         </div>
         <div class="header-actions">
+            <button class="btn" id="debugToggle" onclick="toggleDebug()" title="Toggle debug logging">🐛 Debug: OFF</button>
             <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle light/dark mode">🌙</button>
             <button class="btn btn-primary" id="uploadBtn" onclick="document.getElementById('fileInput').click()">
-                Upload Files
+                Upload Folder
             </button>
         </div>
     </div>
@@ -559,9 +560,9 @@
     <div class="drop-zone" id="dropZone">
         <div class="drop-area" id="dropArea">
             <div class="icon">📊</div>
-            <h2>Drop pstack files here</h2>
-            <p>or click to browse</p>
-            <div class="formats">Supports: .out pstack/gdb/jstack files, ZIP or tar.gz archives<br>No server required — all processing happens in your browser</div>
+            <h2>Drop a folder of pstack files here</h2>
+            <p>or click to select a folder</p>
+            <div class="formats">Supports: folder of .out files, ZIP or tar.gz archives<br>No server required — all processing happens in your browser</div>
         </div>
     </div>
 
@@ -583,9 +584,21 @@
         <span class="pct" id="statusPct"></span>
     </div>
 
-    <input type="file" id="fileInput" multiple>
+    <input type="file" id="fileInput" webkitdirectory>
 
     <script>
+        // ========== DEBUG ==========
+
+        let DEBUG = false;
+        function log(...args) { if (DEBUG) console.log('[flamegraph]', ...args); }
+        function toggleDebug() {
+            DEBUG = !DEBUG;
+            const btn = document.getElementById('debugToggle');
+            btn.textContent = DEBUG ? '🐛 Debug: ON' : '🐛 Debug: OFF';
+            btn.style.borderColor = DEBUG ? 'var(--accent)' : 'var(--border)';
+            btn.style.color = DEBUG ? 'var(--accent)' : 'var(--text-secondary)';
+        }
+
         // ========== THEME TOGGLE ==========
 
         function toggleTheme() {
@@ -722,6 +735,7 @@
                 stacks.push(currentStack);
             }
 
+            log(`parsePstackOutput: found ${stacks.length} stacks`);
             return stacks;
         }
 
@@ -793,14 +807,11 @@
         }
 
         function isStackFile(filename) {
-            if (!filename.toLowerCase().endsWith('.out')) return false;
-            // Only process eu-stack output files (stack-*.out)
-            // Skip proc-stack, proc-status, proc-maps which are /proc/<pid> data
+            if (!filename.toLowerCase().endsWith('.out')) { log('skip (not .out):', filename); return false; }
             const basename = filename.split('/').pop().split('\\').pop().toLowerCase();
-            if (basename.startsWith('proc-')) return false;
+            if (basename.startsWith('proc-')) { log('skip (proc- file):', basename); return false; }
             if (basename === 'proc-maps.out') return false;
-            // Must contain 'stack' in the name to be a stack dump file
-            if (!basename.includes('stack')) return false;
+            if (!basename.includes('stack')) { log('skip (no "stack" in name):', basename); return false; }
             return true;
         }
 
@@ -816,6 +827,7 @@
             let skippedErr = 0;
             const timestamps = [];
             const progressEl = document.getElementById('progressText');
+            log(`processFiles: received ${fileList.length} items`);
 
             for (let i = 0; i < fileList.length; i++) {
                 const file = fileList[i];
@@ -845,12 +857,16 @@
                                 const text = await zipEntry.async('string');
                                 const stacks = parsePstackOutput(text);
                                 if (stacks.length > 0) {
+                                    log(`zip entry ${name}: ${stacks.length} stacks`);
                                     allStacks.push(...stacks);
                                     fileCount++;
                                     const ts = parseTimestampFromFilename(name);
                                     if (ts) timestamps.push(ts);
+                                } else {
+                                    log(`zip entry ${name}: no stacks found`);
                                 }
                             } catch (e) {
+                                log(`zip entry ${name}: error —`, e.message);
                                 continue;
                             }
                         }
@@ -902,10 +918,13 @@
                         const text = await file.text();
                         const stacks = parsePstackOutput(text);
                         if (stacks.length > 0) {
+                            log(`${filename}: ${stacks.length} stacks`);
                             allStacks.push(...stacks);
                             fileCount++;
                             const ts = parseTimestampFromFilename(filename);
                             if (ts) timestamps.push(ts);
+                        } else {
+                            log(`${filename}: no stacks found`);
                         }
                     } catch (e) {
                         throw new Error(`Error reading ${filename}: ${e.message}`);
@@ -918,9 +937,12 @@
             }
 
             progressEl.textContent = 'Building flamegraph...';
+            log(`processFiles: ${fileCount} files, ${allStacks.length} total stacks, ${skippedErr} skipped`);
 
+            const t0 = performance.now();
             const folded = stacksToFolded(allStacks);
             const hierarchy = foldedToD3Hierarchy(folded);
+            log(`folding + hierarchy built in ${(performance.now() - t0).toFixed(1)}ms, ${folded.length} unique stacks`);
 
             // Build time range
             let timeRange = null;
@@ -1029,9 +1051,36 @@
             });
         });
 
-        dropArea.addEventListener('drop', (e) => {
-            if (e.dataTransfer.files.length > 0) uploadFiles(e.dataTransfer.files);
+        dropArea.addEventListener('drop', async (e) => {
+            const items = e.dataTransfer.items;
+            if (!items || items.length === 0) return;
+            log(`drop: ${items.length} top-level item(s)`);
+            const files = [];
+            const promises = [];
+            for (const item of items) {
+                const entry = item.webkitGetAsEntry && item.webkitGetAsEntry();
+                if (entry) promises.push(collectFiles(entry, files));
+            }
+            await Promise.all(promises);
+            log(`drop: ${files.length} file(s) collected after folder traversal`);
+            if (files.length > 0) uploadFiles(files);
         });
+
+        async function collectFiles(entry, files) {
+            if (entry.isFile) {
+                const file = await new Promise(resolve => entry.file(resolve));
+                log(`collectFiles: file —`, file.name);
+                files.push(file);
+            } else if (entry.isDirectory) {
+                log(`collectFiles: entering directory —`, entry.name);
+                const reader = entry.createReader();
+                let batch;
+                do {
+                    batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+                    await Promise.all(batch.map(e => collectFiles(e, files)));
+                } while (batch.length > 0);
+            }
+        }
 
         let totalSamples = 0;
         let currentFlamegraphData = null;
