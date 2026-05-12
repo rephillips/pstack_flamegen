@@ -510,6 +510,48 @@
 
         .stack-frames .frame-func { color: var(--highlight); }
 
+        .bottleneck-card {
+            border-left: 4px solid var(--highlight);
+            background: var(--bg-primary);
+            border-radius: 6px;
+            padding: 14px 16px;
+            margin-bottom: 20px;
+        }
+        .bottleneck-card.idle { border-color: var(--info); }
+        .bottleneck-card.wait { border-color: var(--highlight); }
+        .bottleneck-card.cpu  { border-color: var(--error-border); }
+        .bottleneck-card .bc-label {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 6px;
+            color: var(--text-muted);
+        }
+        .bottleneck-card .bc-headline {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 6px;
+        }
+        .bottleneck-card .bc-detail {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+        .bottleneck-card .bc-detail code {
+            background: var(--code-bg);
+            padding: 1px 5px;
+            border-radius: 3px;
+            font-size: 12px;
+            color: var(--code-text);
+        }
+        .bottleneck-card .bc-suggestion {
+            font-size: 12px;
+            color: var(--text-muted);
+            font-style: italic;
+        }
+
         .guide-content .color-swatch {
             display: inline-block;
             width: 12px;
@@ -1032,33 +1074,35 @@
         });
 
         const dropArea = document.getElementById('dropArea');
+        const dropZone = document.getElementById('dropZone');
 
         dropArea.addEventListener('click', () => {
             document.getElementById('fileInput').click();
         });
 
         ['dragenter', 'dragover'].forEach(evt => {
-            dropArea.addEventListener(evt, (e) => {
+            dropZone.addEventListener(evt, (e) => {
                 e.preventDefault();
                 dropArea.classList.add('dragover');
             });
         });
 
         ['dragleave', 'drop'].forEach(evt => {
-            dropArea.addEventListener(evt, (e) => {
+            dropZone.addEventListener(evt, (e) => {
                 e.preventDefault();
                 dropArea.classList.remove('dragover');
             });
         });
 
-        dropArea.addEventListener('drop', async (e) => {
+        dropZone.addEventListener('drop', async (e) => {
+            e.preventDefault();
             const items = e.dataTransfer.items;
             if (!items || items.length === 0) return;
             log(`drop: ${items.length} top-level item(s)`);
             const files = [];
             const promises = [];
-            for (const item of items) {
-                const entry = item.webkitGetAsEntry && item.webkitGetAsEntry();
+            for (let i = 0; i < items.length; i++) {
+                const entry = items[i].webkitGetAsEntry ? items[i].webkitGetAsEntry() : null;
                 if (entry) promises.push(collectFiles(entry, files));
             }
             await Promise.all(promises);
@@ -1245,6 +1289,70 @@
 
         // ========== ANALYSIS ==========
 
+        function findLikelyBottleneck(foldedData, total) {
+            if (!foldedData || !foldedData.length || !total) return null;
+
+            const waitPattern = /pthread_cond_wait|pthread_cond_timedwait|futex|__lll_lock_wait|nanosleep|usleep|pause|sigsuspend/;
+            const ioPattern   = /^(poll|epoll_wait|__poll|select|pselect|recv|recvfrom|read|accept|inotify_read)$/;
+            const memPattern  = /^(malloc|free|mmap|munmap|brk|__GI___libc_malloc|__malloc|cfree|realloc)$/;
+
+            const leafStats = {};
+            for (const { stack, count } of foldedData) {
+                const frames = stack.split(';');
+                const leaf   = frames[frames.length - 1];
+                const caller = frames.length > 1 ? frames[frames.length - 2] : null;
+                if (!leafStats[leaf]) leafStats[leaf] = { count: 0, callers: {} };
+                leafStats[leaf].count += count;
+                if (caller) leafStats[leaf].callers[caller] = (leafStats[leaf].callers[caller] || 0) + count;
+            }
+
+            const sorted = Object.entries(leafStats).sort((a, b) => b[1].count - a[1].count);
+            const [topLeaf, topStats] = sorted[0];
+            const topPct    = (topStats.count / total * 100).toFixed(1);
+            const topCaller = Object.entries(topStats.callers).sort((a, b) => b[1] - a[1])[0]?.[0];
+            const callerStr = topCaller ? ` called from <code>${escapeHtml(topCaller)}</code>` : '';
+
+            const waitTotal = sorted.reduce((s, [n, v]) =>
+                (waitPattern.test(n) || ioPattern.test(n)) ? s + v.count : s, 0);
+            const waitPct = (waitTotal / total * 100).toFixed(1);
+
+            if (waitPattern.test(topLeaf)) {
+                const mostly = parseFloat(waitPct) > 60;
+                return {
+                    type: 'idle',
+                    headline: mostly
+                        ? `Process is mostly idle — ${waitPct}% of samples are waiting`
+                        : `${topPct}% of samples blocked in <code>${escapeHtml(topLeaf)}</code>`,
+                    detail: `Dominant wait function: <code>${escapeHtml(topLeaf)}</code>${callerStr}.`,
+                    suggestion: mostly
+                        ? 'Most threads are sleeping — this may be normal under light load. Look at the active functions below for what the process does when busy.'
+                        : 'Investigate whether this wait is a bottleneck or intentional throttling.',
+                };
+            }
+            if (ioPattern.test(topLeaf)) {
+                return {
+                    type: 'wait',
+                    headline: `I/O wait — ${topPct}% of samples blocked in <code>${escapeHtml(topLeaf)}</code>`,
+                    detail: `Threads are stalled waiting for I/O${callerStr}.`,
+                    suggestion: 'Consider async I/O, larger buffers, or reviewing network/disk throughput.',
+                };
+            }
+            if (memPattern.test(topLeaf)) {
+                return {
+                    type: 'wait',
+                    headline: `Memory pressure — ${topPct}% of samples in <code>${escapeHtml(topLeaf)}</code>`,
+                    detail: `Heavy allocation/deallocation activity${callerStr}.`,
+                    suggestion: 'Look for excessive object creation, fragmentation, or missing object pooling.',
+                };
+            }
+            return {
+                type: 'cpu',
+                headline: `CPU bottleneck — ${topPct}% of samples in <code>${escapeHtml(topLeaf)}</code>`,
+                detail: `This is the hottest function in the profile${callerStr}.`,
+                suggestion: 'Start optimisation here — this is where the CPU is spending the most time.',
+            };
+        }
+
         function showAnalysis(hierarchy) {
             // Collect all leaf nodes and their values
             const functionStats = {};
@@ -1287,6 +1395,17 @@
             // Build analysis HTML
             let html = '<div class="analysis-panel">';
             html += '<h3>Stack Analysis</h3>';
+
+            // Likely bottleneck card
+            const bottleneck = findLikelyBottleneck(currentFoldedStacks, totalSamples);
+            if (bottleneck) {
+                html += `<div class="bottleneck-card ${bottleneck.type}">`;
+                html += `<div class="bc-label">🔍 Likely Bottleneck</div>`;
+                html += `<div class="bc-headline">${bottleneck.headline}</div>`;
+                html += `<div class="bc-detail">${bottleneck.detail}</div>`;
+                html += `<div class="bc-suggestion">→ ${bottleneck.suggestion}</div>`;
+                html += `</div>`;
+            }
 
             // Summary
             const waitPct = waitFuncs.reduce((s, [, v]) => s + v.selfTime, 0) / totalSamples * 100;
