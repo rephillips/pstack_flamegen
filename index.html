@@ -1303,7 +1303,8 @@
                 .transitionDuration(300)
                 .sort(true)
                 .title('')
-                .selfValue(false);
+                .selfValue(false)
+                .searchMatch((d, term) => d.data.name.toLowerCase().indexOf(term.toLowerCase()) >= 0);
 
             d3.select('#flamegraph-container')
                 .datum(data)
@@ -1827,7 +1828,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 <script>
 var data = ${dataJson};
 var total = ${total};
-var chart = flamegraph().width(document.body.clientWidth).cellHeight(18).transitionDuration(300).sort(true).title('').selfValue(false);
+var chart = flamegraph().width(document.body.clientWidth).cellHeight(18).transitionDuration(300).sort(true).title('').selfValue(false).searchMatch(function(d,t){return d.data.name.toLowerCase().indexOf(t.toLowerCase())>=0;});
 d3.select('#chart').datum(data).call(chart);
 setTimeout(function(){
   d3.select('#chart').selectAll('rect').on('mouseover',function(){
