@@ -579,6 +579,9 @@
         <div class="header-actions">
             <button class="btn" id="debugToggle" onclick="toggleDebug()" title="Toggle debug logging">🐛 Debug: OFF</button>
             <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle light/dark mode">🌙</button>
+            <button class="btn" id="uploadFileBtn" onclick="document.getElementById('fileInputSingle').click()">
+                Upload File
+            </button>
             <button class="btn btn-primary" id="uploadBtn" onclick="document.getElementById('fileInput').click()">
                 Upload Folder
             </button>
@@ -611,9 +614,13 @@
     <div class="drop-zone" id="dropZone">
         <div class="drop-area" id="dropArea">
             <div class="icon">📊</div>
-            <h2>Drop a folder of pstack files here</h2>
-            <p>or click to select a folder</p>
-            <div class="formats">Supports: folder of .out files, ZIP or tar.gz archives<br>No server required — all processing happens in your browser</div>
+            <h2>Drop a folder or file here</h2>
+            <p>or choose an option below</p>
+            <div style="display:flex;gap:12px;justify-content:center;margin-bottom:16px;">
+                <button class="btn btn-primary" onclick="event.stopPropagation();document.getElementById('fileInput').click()">Select Folder</button>
+                <button class="btn" onclick="event.stopPropagation();document.getElementById('fileInputSingle').click()">Select File</button>
+            </div>
+            <div class="formats">Supports: folder of .out files, single .out file, ZIP or tar.gz archives<br>No server required — all processing happens in your browser</div>
         </div>
     </div>
 
@@ -636,6 +643,7 @@
     </div>
 
     <input type="file" id="fileInput" webkitdirectory>
+    <input type="file" id="fileInputSingle" multiple>
 
     <script>
         // ========== DEBUG ==========
@@ -1100,6 +1108,12 @@
                 const rel = e.target.files[0].webkitRelativePath;
                 const folderName = rel ? rel.split('/')[0] : null;
                 uploadFiles(e.target.files, folderName);
+            }
+        });
+
+        document.getElementById('fileInputSingle').addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                uploadFiles(e.target.files, null);
             }
         });
 
