@@ -6,14 +6,19 @@ A zero-dependency browser app that generates interactive flamegraph SVGs from ra
 
 ## Features
 
-- **Zero setup** — single HTML file, no server, no Python, no dependencies to install
+- **Zero setup, fully offline** — single HTML file plus a local `vendor/` folder; no server, no Python, no CDN, no network. Nothing to install and nothing leaves the machine (works on air-gapped Splunk hosts)
 - **Drag-and-drop upload** — drop individual `.out` files, ZIP archives, or tar.gz files
-- **Interactive flamegraph** — zoom, search, and hover for details (powered by d3-flame-graph)
-- **SVG download** — export the flamegraph as an SVG file
+- **Interactive flamegraph** — click-to-zoom, hover status bar, and reset zoom (powered by d3-flame-graph)
+- **Semantic coloring** — frames are colored by type (sync = purple, memory = red, I/O = blue, SSL/TLS = cyan, C++ std = violet, application = warm/orange), mirroring the palettes from Brendan Gregg's FlameGraph tools
+- **Powerful search** — case-insensitive or regex search, with a magenta highlight, a "Matched: X%" cumulative readout, and prev/next match navigation. `Ctrl-F` focuses search, `Ctrl-I` toggles case sensitivity
+- **Icicle (inverted) layout** — flip the graph top-down for reading deep stacks
+- **Min-width culling** — hide frames narrower than N pixels to declutter large graphs
+- **Self-contained export** — "Download Interactive HTML" produces a single file with the libraries inlined, so it opens offline and can be attached straight to a support ticket
+- **Stack analysis** — likely-bottleneck diagnosis, on-CPU vs waiting/idle breakdown, top functions, and a collapsible Top Stacks panel
 - **Time range display** — automatically detects timestamps from collect-stacks.sh filenames and shows earliest/latest collection time and duration
 - **Smart filtering** — automatically skips `.err` files, only processes `.out` files
-- **Multi-format parsing** — supports Linux pstack, GDB backtrace, and jstack output
-- **Dark theme UI**
+- **Multi-format parsing** — supports Linux pstack, GDB backtrace, eu-stack, and jstack output
+- **Dark/light theme UI**
 
 ## Quick Start
 
@@ -39,11 +44,12 @@ That's it. No `pip install`, no server to run.
    - Supports `.tar.gz` archives
    - `.err` files are automatically filtered out
 3. The flamegraph renders automatically after upload
-4. **Search** — type a function name in the search bar to highlight matching frames
+4. **Search** — type a function name (or a regex, with the Regex toggle) to highlight matching frames; the bar shows the match count and the cumulative "Matched: X%". `Ctrl-F` focuses the search box, `Ctrl-I` toggles case sensitivity
 5. **Zoom** — click any frame to zoom into that subtree
 6. **Reset Zoom** — click the Reset Zoom button to return to the full view
-7. **Download SVG** — click Download SVG to save the flamegraph as a file
-8. **New Upload** — click New Upload to start over with different files
+7. **Icicle / Min width** — flip to a top-down layout for deep stacks, or hide frames below a pixel width
+8. **Download Interactive HTML** — save a fully self-contained, offline copy of the flamegraph and analysis
+9. **New Upload** — click New Upload to start over with different files
 
 ## Collecting Pstacks on Splunk Enterprise
 

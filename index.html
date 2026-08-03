@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Flamegraph Generator</title>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/d3-flame-graph@4.1.3/dist/d3-flamegraph.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/d3-flame-graph@4.1.3/dist/d3-flamegraph.css">
+    <script src="vendor/d3.v7.min.js"></script>
+    <script src="vendor/d3-flamegraph.min.js"></script>
+    <script src="vendor/jszip.min.js"></script>
+    <link rel="stylesheet" href="vendor/d3-flamegraph.css">
     <style>
         /* ========== THEME VARIABLES ========== */
         :root {
@@ -183,6 +183,10 @@
         .btn:hover { background: var(--bg-hover); border-color: var(--accent); }
         .btn-primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
         .btn-primary:hover { background: var(--accent-hover); }
+        .toggle-btn.active { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
+        .minwidth-ctl { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); }
+        .minwidth-ctl input[type="number"] { width: 56px; background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-primary); padding: 6px 8px; border-radius: 6px; font-size: 13px; }
+        .matched-pct { background: var(--border); color: var(--accent-light); padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 12px; }
 
         .drop-zone {
             display: flex;
@@ -229,7 +233,7 @@
         #flamegraph-container .d3-flame-graph-label { fill: var(--text-primary) !important; }
         #flamegraph-container .d3-flame-graph .searching .highlight rect { fill: #9c27b0 !important; }
         #flamegraph-container .d3-flame-graph .searching .highlight .d3-flame-graph-label { fill: #fff !important; }
-        #flamegraph-container .d3-flame-graph .searching .highlight.current-match rect { fill: #e040fb !important; stroke: #fff !important; stroke-width: 1.5px !important; }
+        #flamegraph-container rect.current-match { stroke: #fff !important; stroke-width: 2px !important; }
 
         .search-result-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
         .search-nav-btn { padding: 2px 10px; font-size: 12px; line-height: 1.6; }
@@ -601,9 +605,15 @@
     </div>
 
     <div class="toolbar" id="toolbar">
-        <input type="text" id="searchInput" placeholder="Search functions... (e.g. malloc, pthread)">
+        <input type="text" id="searchInput" placeholder="Search functions... (Ctrl-F) — e.g. malloc, pthread">
+        <button class="btn toggle-btn" id="regexBtn" onclick="toggleRegex()" title="Treat search as a regular expression">.* Regex</button>
+        <button class="btn toggle-btn" id="caseBtn" onclick="toggleCase()" title="Toggle case sensitivity (Ctrl-I)">Aa Case</button>
         <button class="btn" id="resetZoomBtn" onclick="resetZoom()">Reset Zoom</button>
         <button class="btn" id="clearSearchBtn" onclick="clearSearch()">Clear Search</button>
+        <button class="btn toggle-btn" id="invertBtn" onclick="toggleInverted()" title="Flip to icicle (top-down) layout">🧊 Icicle</button>
+        <label class="minwidth-ctl" title="Hide frames narrower than this (px)">Min width
+            <input type="number" id="minWidthInput" min="0" max="50" step="1" value="0" onchange="setMinWidth(this.value)">px
+        </label>
         <button class="btn" onclick="downloadInteractiveHTML()">Download Interactive HTML</button>
         <button class="btn" onclick="resetAll()">New Upload</button>
     </div>
@@ -672,6 +682,83 @@
         })();
 
         let flameChart = null;
+
+        // ========== VIEW STATE (parity with flamegraph.pl options) ==========
+
+        let invertedMode = false;          // --inverted / icicle
+        let minFrameSize = 0;              // --minwidth (in px)
+        let searchCaseSensitive = false;   // Ctrl-I toggles (flamegraph.pl default is case-sensitive)
+        let searchIsRegex = false;         // treat search term as a regular expression
+
+        // ========== COLOR MAPPER (semantic palette, matches How-to-Read key) ==========
+
+        // Deterministic warm color from a function name, mirroring flamegraph.pl's
+        // "hot" palette: reds/oranges varied per-name so adjacent frames differ.
+        function warmColor(name) {
+            let h = 5381;
+            for (let i = 0; i < name.length; i++) h = ((h << 5) + h + name.charCodeAt(i)) & 0xffffffff;
+            const v1 = ((h >>> 0) % 1000) / 1000;   // 0..1
+            const v2 = ((h >>> 10) % 1000) / 1000;
+            const r = 205 + Math.round(50 * v1);
+            const g = Math.round(220 * v2);
+            const b = Math.round(55 * v2);
+            return `rgb(${r},${g},${b})`;
+        }
+
+        const colorCategories = [
+            { re: /pthread_cond_wait|pthread_cond_timedwait|pthread_mutex|__lll_lock_wait|futex|std::mutex|std::condition_variable|_lock|Mutex|spin/i, color: '#5c6bc0' }, // sync — purple
+            { re: /\b(malloc|free|calloc|realloc|cfree|mmap|munmap|brk|operator new|operator delete|_Znwm|_Znam|_ZdlPv|tcmalloc|je_malloc|__libc_malloc)\b/i, color: '#ef5350' }, // memory — red
+            { re: /SSL_|TLS|EVP_|crypto|libssl|BIO_|X509|RAND_bytes/i, color: '#26c6da' }, // ssl/tls — cyan
+            { re: /\b(epoll_wait|epoll_ctl|__poll|\bpoll\b|select|pselect|recv|recvfrom|recvmsg|send|sendto|sendmsg|\bread\b|\bwrite\b|pread|pwrite|accept|connect|socket|inotify_read)\b/i, color: '#42a5f5' }, // I/O — blue
+            { re: /^std::|__gnu_cxx|_M_/i, color: '#ab47bc' }, // C++ std lib — violet
+        ];
+
+        function flameColorMapper(d) {
+            // Honor the library's search highlight (magenta, matches flamegraph.pl's rgb(230,0,230)).
+            if (d && d.highlight) return '#e600e6';
+            const name = (d && d.data && d.data.name) || '';
+            if (name === 'all' || name === 'root') return '#4a4a5e';
+            for (const cat of colorCategories) {
+                if (cat.re.test(name)) return cat.color;
+            }
+            return warmColor(name); // application code — warm/orange, varied
+        }
+
+        // ========== SEARCH MATCHER (regex-capable, parity with flamegraph.pl) ==========
+
+        function buildSearchTester(term) {
+            if (!term) return null;
+            if (searchIsRegex) {
+                try {
+                    const re = new RegExp(term, searchCaseSensitive ? '' : 'i');
+                    return (name) => re.test(name);
+                } catch (e) {
+                    // invalid regex — fall through to substring
+                }
+            }
+            if (searchCaseSensitive) return (name) => name.indexOf(term) >= 0;
+            const lower = term.toLowerCase();
+            return (name) => name.toLowerCase().indexOf(lower) >= 0;
+        }
+
+        function searchMatchFn(d, term) {
+            const tester = buildSearchTester(term);
+            const name = (d && d.data && d.data.name) || '';
+            return tester ? tester(name) : false;
+        }
+
+        // Cumulative % of samples whose stack includes the search term (flamegraph.pl "Matched").
+        function computeMatchedPct(term) {
+            if (!term || !currentFoldedStacks || !totalSamples) return 0;
+            const tester = buildSearchTester(term);
+            if (!tester) return 0;
+            let matched = 0;
+            for (const { stack, count } of currentFoldedStacks) {
+                const frames = stack.split(';');
+                if (frames.some(tester)) matched += count;
+            }
+            return (matched / totalSamples) * 100;
+        }
 
         // ========== PSTACK PARSER (ported from Python) ==========
 
@@ -1170,18 +1257,19 @@
 
         document.getElementById('searchInput').addEventListener('input', (e) => {
             if (!flameChart) return;
-            const term = e.target.value.trim();
-            currentSearchTerm = term;
-            if (term) {
-                flameChart.search(term);
-                setTimeout(() => {
-                    searchMatches = Array.from(document.querySelectorAll('#flamegraph-container .highlight'));
-                    searchMatchIndex = searchMatches.length > 0 ? 0 : -1;
-                    renderSearchBar();
-                    if (searchMatchIndex >= 0) navigateToMatch(0);
-                }, 100);
-            } else {
-                clearSearch();
+            runSearch(e.target.value.trim());
+        });
+
+        // Keyboard shortcuts (parity with flamegraph.pl): Ctrl-F focus search, Ctrl-I toggle case.
+        document.addEventListener('keydown', (e) => {
+            if (!flameChart) return;
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+                e.preventDefault();
+                document.getElementById('searchInput').focus();
+                document.getElementById('searchInput').select();
+            } else if (e.ctrlKey && e.key.toLowerCase() === 'i') {
+                e.preventDefault();
+                toggleCase();
             }
         });
 
@@ -1206,8 +1294,10 @@
             if (count === 0) {
                 bar.innerHTML = `No matches for "<strong>${escapeHtml(currentSearchTerm)}</strong>"`;
             } else {
+                const matchedPct = computeMatchedPct(currentSearchTerm).toFixed(1);
                 bar.innerHTML = `
-                    <strong>${count}</strong> match${count !== 1 ? 'es' : ''} for "<strong>${escapeHtml(currentSearchTerm)}</strong>"
+                    <strong>${count}</strong> frame${count !== 1 ? 's' : ''} highlighted for "<strong>${escapeHtml(currentSearchTerm)}</strong>"
+                    <span class="matched-pct">Matched: ${matchedPct}%</span>
                     <span style="color:var(--text-muted)">${current} of ${count}</span>
                     <button class="btn search-nav-btn" onclick="navigateToMatch(${searchMatchIndex - 1})">◀ Prev</button>
                     <button class="btn search-nav-btn" onclick="navigateToMatch(${searchMatchIndex + 1})">Next ▶</button>`;
@@ -1304,7 +1394,10 @@
                 .sort(true)
                 .title('')
                 .selfValue(false)
-                .searchMatch((d, term) => d.data.name.toLowerCase().indexOf(term.toLowerCase()) >= 0);
+                .inverted(invertedMode)
+                .minFrameSize(minFrameSize)
+                .setColorMapper(flameColorMapper)
+                .setSearchMatch(searchMatchFn);
 
             d3.select('#flamegraph-container')
                 .datum(data)
@@ -1544,7 +1637,12 @@
         }
 
         function escapeHtml(str) {
-            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
         }
 
         function showGuide() {
@@ -1593,7 +1691,9 @@
                         <li><b>Click</b> a bar to zoom into that subtree</li>
                         <li><b>Search</b> to highlight all frames matching a function name</li>
                         <li><b>Reset Zoom</b> to return to the full flamegraph view</li>
-                        <li><b>Download SVG</b> to save the flamegraph for sharing or documentation</li>
+                        <li><b>Icicle</b> to flip to a top-down (upside-down) layout, useful for deep stacks</li>
+                        <li><b>Regex</b> / <b>Case</b> to control how the search bar matches (Ctrl-F focuses search, Ctrl-I toggles case)</li>
+                        <li><b>Download Interactive HTML</b> to save a fully self-contained, offline copy for sharing or a support ticket</li>
                     </ul>
 
                     <h4>What to Look For (Splunk)</h4>
@@ -1695,10 +1795,96 @@
             if (flameChart) flameChart.clear();
         }
 
-        function downloadInteractiveHTML() {
+        // Re-run the current search term (after a mode toggle) and refresh the result bar.
+        function runSearch(term) {
+            if (!flameChart) return;
+            currentSearchTerm = term;
+            if (!term) { clearSearch(); return; }
+            flameChart.search(term);
+            setTimeout(() => {
+                // This d3-flame-graph build flags matches on the node datum (d.highlight)
+                // rather than adding a CSS class, so collect matched rects that way.
+                searchMatches = Array.from(document.querySelectorAll('#flamegraph-container rect'))
+                    .filter(r => { const d = d3.select(r).datum(); return d && d.highlight; });
+                searchMatchIndex = searchMatches.length > 0 ? 0 : -1;
+                renderSearchBar();
+                if (searchMatchIndex >= 0) navigateToMatch(0);
+            }, 100);
+        }
+
+        function toggleRegex() {
+            searchIsRegex = !searchIsRegex;
+            document.getElementById('regexBtn').classList.toggle('active', searchIsRegex);
+            runSearch(document.getElementById('searchInput').value.trim());
+        }
+
+        function toggleCase() {
+            searchCaseSensitive = !searchCaseSensitive;
+            document.getElementById('caseBtn').classList.toggle('active', searchCaseSensitive);
+            runSearch(document.getElementById('searchInput').value.trim());
+        }
+
+        function toggleInverted() {
+            invertedMode = !invertedMode;
+            document.getElementById('invertBtn').classList.toggle('active', invertedMode);
+            if (flameChart && currentFlamegraphData) {
+                flameChart.inverted(invertedMode);
+                d3.select('#flamegraph-container').datum(currentFlamegraphData).call(flameChart);
+                if (currentSearchTerm) runSearch(currentSearchTerm);
+            }
+        }
+
+        function setMinWidth(px) {
+            minFrameSize = Math.max(0, parseInt(px, 10) || 0);
+            if (flameChart && currentFlamegraphData) {
+                flameChart.minFrameSize(minFrameSize);
+                d3.select('#flamegraph-container').datum(currentFlamegraphData).call(flameChart);
+                if (currentSearchTerm) runSearch(currentSearchTerm);
+            }
+        }
+
+        // Escape a JSON string so it is safe to embed inside an inline <script> element.
+        function jsonForScript(obj) {
+            return JSON.stringify(obj)
+                .replace(/</g, '\\u003c')
+                .replace(/>/g, '\\u003e')
+                .replace(/\u2028/g, '\\u2028')
+                .replace(/\u2029/g, '\\u2029');
+        }
+
+        async function fetchTextSameOrigin(url) {
+            const r = await fetch(url);
+            if (!r.ok) throw new Error('fetch failed: ' + url);
+            return r.text();
+        }
+
+        async function downloadInteractiveHTML() {
             if (!currentFlamegraphData) return;
 
-            const dataJson = JSON.stringify(currentFlamegraphData);
+            // Try to inline the vendored libraries so the export is fully self-contained
+            // and works offline. Fall back to SRI-pinned CDN if fetch is unavailable (file://).
+            let inlineLibs = null;
+            try {
+                const [d3js, fgjs, fgcss] = await Promise.all([
+                    fetchTextSameOrigin('vendor/d3.v7.min.js'),
+                    fetchTextSameOrigin('vendor/d3-flamegraph.min.js'),
+                    fetchTextSameOrigin('vendor/d3-flamegraph.css'),
+                ]);
+                const guardJs = (t) => t.replace(/<\/script/gi, '<\\/script');
+                inlineLibs =
+                    `<style>${fgcss.replace(/<\/style/gi, '<\\/style')}</style>\n` +
+                    `<script>${guardJs(d3js)}<\/script>\n` +
+                    `<script>${guardJs(fgjs)}<\/script>`;
+            } catch (e) {
+                log('export: inlining vendored libs failed, using SRI CDN fallback —', e.message);
+                inlineLibs =
+                    `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/d3-flame-graph@4.1.3/dist/d3-flamegraph.css" integrity="sha384-DgAQSBzzhv8bu6Qc6Lq08THluOr+kO5qLMHt1yv8A3my7Jz2OQv6aq/WSZRYIQkG" crossorigin="anonymous">\n` +
+                    `<script src="https://d3js.org/d3.v7.min.js" integrity="sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i" crossorigin="anonymous"><\/script>\n` +
+                    `<script src="https://cdn.jsdelivr.net/npm/d3-flame-graph@4.1.3/dist/d3-flamegraph.min.js" integrity="sha384-p4NaVVE+k6MT/enE0MtQ8B15rM9BGzHCnx8DizawPGks1ssZUeNdw6bAPpH2gp2w" crossorigin="anonymous"><\/script>`;
+            }
+
+            const dataJson = jsonForScript(currentFlamegraphData);
+            const foldedJson = jsonForScript(currentFoldedStacks || []);
             const total = totalSamples;
             const s = currentStats || {};
             const stats = s.stats || {};
@@ -1736,9 +1922,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Flamegraph</title>
-<script src="https://d3js.org/d3.v7.min.js"><\/script>
-<script src="https://cdn.jsdelivr.net/npm/d3-flame-graph@4.1.3/dist/d3-flamegraph.min.js"><\/script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/d3-flame-graph@4.1.3/dist/d3-flamegraph.css">
+${inlineLibs}
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; }
@@ -1753,6 +1937,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .toolbar input::placeholder { color: #555; }
 .btn { padding: 8px 16px; border-radius: 6px; border: 1px solid #0f3460; background: #16213e; color: #e0e0e0; cursor: pointer; font-size: 13px; }
 .btn:hover { background: #0f3460; border-color: #00c853; }
+.btn.active { background: #00c853; color: #000; border-color: #00c853; font-weight: 600; }
+.matched-pct { color: #69f0ae; font-weight: 600; font-size: 13px; }
 #chart { background: #1a1a2e; }
 #chart .d3-flame-graph-label { fill: #e0e0e0 !important; }
 #chart .d3-flame-graph rect { stroke: #444; stroke-width: 0.5px; }
@@ -1812,9 +1998,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
   ${timeHtml}
 </div>
 <div class="toolbar">
-  <input type="text" id="search" placeholder="Search functions...">
+  <input type="text" id="search" placeholder="Search functions... (regex supported)">
   <button class="btn" onclick="chart.resetZoom()">Reset Zoom</button>
-  <button class="btn" onclick="document.getElementById('search').value='';chart.clear()">Clear</button>
+  <button class="btn" onclick="document.getElementById('search').value='';chart.clear();document.getElementById('matched').textContent=''">Clear</button>
+  <button class="btn" id="invBtn" onclick="toggleInv()">🧊 Icicle</button>
+  <span id="matched" class="matched-pct"></span>
 </div>
 <div id="chart"></div>
 <div class="status">
@@ -1827,10 +2015,24 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 <div id="guidePanel">${guideHtml}</div>
 <script>
 var data = ${dataJson};
+var folded = ${foldedJson};
 var total = ${total};
-var chart = flamegraph().width(document.body.clientWidth).cellHeight(18).transitionDuration(300).sort(true).title('').selfValue(false).searchMatch(function(d,t){return d.data.name.toLowerCase().indexOf(t.toLowerCase())>=0;});
+var inverted = false;
+function warmColor(name){var h=5381;for(var i=0;i<name.length;i++){h=((h<<5)+h+name.charCodeAt(i))&0xffffffff;}var v1=((h>>>0)%1000)/1000,v2=((h>>>10)%1000)/1000;return 'rgb('+(205+Math.round(50*v1))+','+Math.round(220*v2)+','+Math.round(55*v2)+')';}
+var cats=[
+  {re:/pthread_cond_wait|pthread_cond_timedwait|pthread_mutex|__lll_lock_wait|futex|std::mutex|std::condition_variable|_lock|Mutex|spin/i,c:'#5c6bc0'},
+  {re:/\\b(malloc|free|calloc|realloc|cfree|mmap|munmap|brk|operator new|operator delete|_Znwm|_Znam|_ZdlPv|tcmalloc|je_malloc|__libc_malloc)\\b/i,c:'#ef5350'},
+  {re:/SSL_|TLS|EVP_|crypto|libssl|BIO_|X509|RAND_bytes/i,c:'#26c6da'},
+  {re:/\\b(epoll_wait|epoll_ctl|__poll|\\bpoll\\b|select|pselect|recv|recvfrom|recvmsg|send|sendto|sendmsg|\\bread\\b|\\bwrite\\b|pread|pwrite|accept|connect|socket|inotify_read)\\b/i,c:'#42a5f5'},
+  {re:/^std::|__gnu_cxx|_M_/i,c:'#ab47bc'}
+];
+function colorMapper(d){if(d&&d.highlight)return '#e600e6';var n=(d&&d.data&&d.data.name)||'';if(n==='all'||n==='root')return '#4a4a5e';for(var i=0;i<cats.length;i++){if(cats[i].re.test(n))return cats[i].c;}return warmColor(n);}
+function tester(t){try{var re=new RegExp(t,'i');return function(n){return re.test(n);};}catch(e){var l=t.toLowerCase();return function(n){return n.toLowerCase().indexOf(l)>=0;};}}
+function matchedPct(t){if(!t||!total)return 0;var f=tester(t),m=0;for(var i=0;i<folded.length;i++){var fr=folded[i].stack.split(';');for(var j=0;j<fr.length;j++){if(f(fr[j])){m+=folded[i].count;break;}}}return (m/total*100);}
+function build(){return flamegraph().width(document.body.clientWidth).cellHeight(18).transitionDuration(300).sort(true).title('').selfValue(false).inverted(inverted).setColorMapper(colorMapper).setSearchMatch(function(d,t){return tester(t)((d&&d.data&&d.data.name)||'');});}
+var chart = build();
 d3.select('#chart').datum(data).call(chart);
-setTimeout(function(){
+function bindHover(){
   d3.select('#chart').selectAll('rect').on('mouseover',function(){
     var d=d3.select(this).datum();
     if(d){
@@ -1841,11 +2043,14 @@ setTimeout(function(){
       document.getElementById('sp').textContent='('+p+'%)';
     }
   });
-},500);
+}
+setTimeout(bindHover,500);
 document.getElementById('search').addEventListener('input',function(e){
   var t=e.target.value.trim();
-  if(t){chart.search(t)}else{chart.clear()}
+  if(t){chart.search(t);document.getElementById('matched').textContent='Matched: '+matchedPct(t).toFixed(1)+'%';}
+  else{chart.clear();document.getElementById('matched').textContent='';}
 });
+function toggleInv(){inverted=!inverted;document.getElementById('invBtn').classList.toggle('active',inverted);chart.inverted(inverted);d3.select('#chart').datum(data).call(chart);setTimeout(bindHover,500);}
 window.onresize=function(){chart.width(document.body.clientWidth);d3.select('#chart').datum(data).call(chart)};
 // Stacks toggle
 document.querySelectorAll('.stacks-panel h3').forEach(function(h){
@@ -1914,6 +2119,17 @@ document.querySelectorAll('.guide-panel h3').forEach(function(h){
             currentFlamegraphData = null;
             currentStats = null;
             currentFoldedStacks = null;
+            // Reset view modes to defaults
+            invertedMode = false;
+            minFrameSize = 0;
+            searchCaseSensitive = false;
+            searchIsRegex = false;
+            ['regexBtn', 'caseBtn', 'invertBtn'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.remove('active');
+            });
+            const mw = document.getElementById('minWidthInput');
+            if (mw) mw.value = '0';
         }
 
         function showError(msg) {
