@@ -8,6 +8,21 @@
     <script src="vendor/d3-flamegraph.min.js"></script>
     <script src="vendor/jszip.min.js"></script>
     <link rel="stylesheet" href="vendor/d3-flamegraph.css">
+    <!-- Vendored Geist (Vercel's typeface), variable woff2, loaded locally so the
+         app stays offline. Kept out of #dsTokens so token-only consumers (the
+         export) don't inherit relative-path @font-face rules. -->
+    <style id="dsFonts">
+        @font-face {
+            font-family: 'Geist';
+            src: url('vendor/fonts/Geist-Variable.woff2') format('woff2');
+            font-weight: 100 900; font-style: normal; font-display: swap;
+        }
+        @font-face {
+            font-family: 'Geist Mono';
+            src: url('vendor/fonts/GeistMono-Variable.woff2') format('woff2');
+            font-weight: 100 900; font-style: normal; font-display: swap;
+        }
+    </style>
     <!--
       ============================================================
        DESIGN SYSTEM — design tokens (single source of truth)
@@ -27,44 +42,45 @@
         --fs-*                           type scale
         --font-*                         font families
         --transition-*                   motion durations
-      Theme-agnostic tokens (space/radius/type/font/transition/fg palette)
-      are defined once on :root; only role colors are overridden for light.
+      The app is dark-only (true-black, Vercel-style). All tokens live on
+      :root; there is no theme toggle.
     -->
     <style id="dsTokens">
         :root {
-            /* --- surface & text roles (dark, default) --- */
-            --bg-primary: #1a1a2e;
-            --bg-secondary: #16213e;
-            --bg-hover: #1a2742;
-            --border: #0f3460;
-            --border-light: #0a1a30;
-            --text-primary: #e0e0e0;
-            --text-secondary: #aaa;
-            --text-muted: #888;
-            --text-dim: #666;
-            --text-placeholder: #555;
-            --accent: #00c853;
-            --accent-hover: #00e676;
-            --accent-light: #69f0ae;
-            --highlight: #ffab40;
+            /* --- surface & text roles (dark, default) — true-black, Vercel-style --- */
+            --bg-primary: #000000;      /* page: pure black */
+            --bg-secondary: #0a0a0a;    /* cards/header: barely lifted */
+            --bg-hover: #161616;
+            --border: #262626;          /* hairline neutral borders */
+            --border-light: #1a1a1a;
+            --text-primary: #ededed;    /* near-white, high contrast */
+            --text-secondary: #a1a1a1;
+            --text-muted: #737373;
+            --text-dim: #525252;
+            --text-placeholder: #404040;
+            --accent: #00ff9d;          /* neon green */
+            --accent-hover: #5affc0;
+            --accent-light: #8affce;
+            --hero: #34ff77;            /* brighter electric neon green — hero title only */
+            --highlight: #ffab40;       /* amber — mono function names / sample counts */
             --info: #40c4ff;
-            --error-bg: #3d1212;
-            --error-border: #f44336;
-            --error-text: #ff8a80;
-            --status-bg: #111;
-            --status-border: #333;
-            --flamegraph-bg: #1a1a2e;
-            --flamegraph-stroke: #444;
-            --tooltip-bg: #222;
-            --tooltip-text: #eee;
-            --tooltip-border: #444;
-            --badge-active-bg: #1b5e20;
-            --badge-active-text: #69f0ae;
-            --badge-idle-bg: #0d47a1;
-            --badge-idle-text: #82b1ff;
-            --code-bg: #0f3460;
-            --code-text: #ffab40;
-            --spinner-track: #0f3460;
+            --error-bg: #2a0f0f;
+            --error-border: #ff5c5c;
+            --error-text: #ff9d9d;
+            --status-bg: #000000;
+            --status-border: #262626;
+            --flamegraph-bg: #000000;
+            --flamegraph-stroke: #262626;
+            --tooltip-bg: #0a0a0a;
+            --tooltip-text: #ededed;
+            --tooltip-border: #262626;
+            --badge-active-bg: #052e1c;
+            --badge-active-text: #00ff9d;
+            --badge-idle-bg: #0a1a2e;
+            --badge-idle-text: #7db8ff;
+            --code-bg: #161616;
+            --code-text: #00ff9d;       /* terminal-green inline code */
+            --spinner-track: #262626;
 
             /* --- flamegraph frame palette (by code type; theme-agnostic) --- */
             --fg-root:   #4a4a5e;  /* the synthetic root/"all" frame */
@@ -103,61 +119,19 @@
             --fs-2xl: 20px;
             --fs-3xl: 22px;
 
-            /* --- font families --- */
-            --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            --font-mono: 'SF Mono', 'Menlo', 'Consolas', monospace;
+            /* --- font families (Geist first, graceful system fallback) --- */
+            --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            --font-mono: 'Geist Mono', 'SF Mono', 'Menlo', 'Consolas', monospace;
+
+            /* --- letter-spacing (tight tracking on display type, Vercel-style) --- */
+            --tracking-tight: -0.02em;
+            --tracking-tighter: -0.03em;
 
             /* --- motion --- */
             --transition-fast: 0.2s;
             --transition-base: 0.3s;
         }
 
-        /*
-          Light theme overrides ONLY the role colors (surfaces, text, accents).
-          The --fg-* flamegraph palette and all non-color tokens are inherited
-          from :root unchanged, so frame colors carry their meaning across themes.
-          Built as a coherent cool-gray neutral ramp + green accent, tuned so
-          text roles keep readable contrast on their intended surfaces.
-        */
-        [data-theme="light"] {
-            /* surfaces: cool-gray canvas, white cards */
-            --bg-primary: #f4f6f9;
-            --bg-secondary: #ffffff;
-            --bg-hover: #eaeef4;
-            --border: #d3dae2;
-            --border-light: #eaedf1;
-            /* text: near-black → muted, all on light surfaces */
-            --text-primary: #16202c;
-            --text-secondary: #48566a;
-            --text-muted: #64748b;
-            --text-dim: #94a3b8;
-            --text-placeholder: #aab4c2;
-            /* accent: same green identity as dark, darkened for contrast on white */
-            --accent: #0a7d43;
-            --accent-hover: #0a8f4c;
-            --accent-light: #0a7d43;
-            --highlight: #b4690e;
-            --info: #1567b3;
-            --error-bg: #fdecec;
-            --error-border: #d32f2f;
-            --error-text: #b71c1c;
-            --status-bg: #eef1f5;
-            --status-border: #d3dae2;
-            /* flamegraph chrome (not frame fills): classic white canvas */
-            --flamegraph-bg: #ffffff;
-            --flamegraph-stroke: #cbd3dc;
-            /* dark tooltip reads well over a light page */
-            --tooltip-bg: #1f2733;
-            --tooltip-text: #ffffff;
-            --tooltip-border: #3a4553;
-            --badge-active-bg: #e3f5e9;
-            --badge-active-text: #1b7f3b;
-            --badge-idle-bg: #e4eefb;
-            --badge-idle-text: #1560ad;
-            --code-bg: #eef1f6;
-            --code-text: #a3550a;
-            --spinner-track: #d3dae2;
-        }
     </style>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -167,6 +141,10 @@
             background: var(--bg-primary);
             color: var(--text-primary);
             min-height: 100vh;
+            letter-spacing: -0.011em;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
             transition: background var(--transition-base), color var(--transition-base);
         }
 
@@ -181,8 +159,16 @@
 
         .header h1 {
             font-size: var(--fs-3xl);
-            color: var(--accent);
+            color: var(--hero);
             font-weight: 600;
+            letter-spacing: var(--tracking-tighter);
+            text-shadow: 0 0 22px rgba(52, 255, 119, 0.55), 0 0 4px rgba(52, 255, 119, 0.35);
+        }
+
+        /* Tight tracking on display/heading type (Vercel-style) */
+        .analysis-panel h3, .guide-panel h3, .stacks-panel h3,
+        .drop-area h2, .bottleneck-card .bc-headline {
+            letter-spacing: var(--tracking-tight);
         }
 
         .header .subtitle {
@@ -193,19 +179,6 @@
 
         .header-actions { display: flex; gap: 8px; align-items: center; }
 
-        .theme-toggle {
-            background: none;
-            border: 1px solid var(--border);
-            color: var(--text-secondary);
-            cursor: pointer;
-            font-size: var(--fs-xl);
-            padding: 6px 10px;
-            border-radius: var(--radius-md);
-            transition: all var(--transition-fast);
-            line-height: 1;
-        }
-
-        .theme-toggle:hover { border-color: var(--accent); background: var(--bg-hover); }
 
         .stats-bar {
             display: none;
@@ -432,6 +405,31 @@
 
         .analysis-badge.active { background: var(--badge-active-bg); color: var(--badge-active-text); }
         .analysis-badge.idle { background: var(--badge-idle-bg); color: var(--badge-idle-text); }
+        .analysis-badge.lock { background: #2a1a05; color: #ffab40; }
+
+        .insight-card {
+            border-left: 4px solid var(--info);
+            background: var(--bg-primary);
+            border-radius: var(--radius-md);
+            padding: 12px 16px;
+            margin-bottom: 10px;
+        }
+        .insight-card.info { border-color: var(--info); }
+        .insight-card.warn { border-color: var(--highlight); }
+        .insight-card.hot  { border-color: var(--error-border); }
+        .insight-card ul { margin: 6px 0 0 18px; }
+        .insight-card li { margin-bottom: 3px; font-size: var(--fs-sm); color: var(--text-secondary); }
+        .insight-card code {
+            background: var(--code-bg);
+            padding: 1px 5px;
+            border-radius: var(--radius-xs);
+            font-size: var(--fs-xs);
+            color: var(--code-text);
+            font-family: var(--font-mono);
+        }
+        .insight-card .bc-headline { font-size: var(--fs-lg); font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
+        .insight-card .bc-detail { font-size: var(--fs-sm); color: var(--text-secondary); margin-bottom: 6px; }
+        .insight-card .bc-suggestion { font-size: var(--fs-xs); color: var(--text-muted); font-style: italic; }
 
         .analysis-table {
             width: 100%;
@@ -662,7 +660,7 @@
         </div>
         <div class="header-actions">
             <button class="btn" id="debugToggle" onclick="toggleDebug()" title="Toggle debug logging">🐛 Debug: OFF</button>
-            <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle light/dark mode">🌙</button>
+            <button class="btn" id="newUploadBtn" onclick="resetAll()" style="display:none" title="Clear and start over with a new folder, ZIP, tar.gz, or dragged files">New Upload</button>
             <button class="btn btn-primary" id="uploadBtn" onclick="document.getElementById('fileInput').click()">
                 Upload Folder
             </button>
@@ -695,7 +693,6 @@
             <input type="number" id="minWidthInput" min="0" max="50" step="1" value="0" onchange="setMinWidth(this.value)">px
         </label>
         <button class="btn" onclick="downloadInteractiveHTML()">Download Interactive HTML</button>
-        <button class="btn" onclick="resetAll()">New Upload</button>
     </div>
 
     <div class="drop-zone" id="dropZone">
@@ -739,27 +736,6 @@
             btn.style.borderColor = DEBUG ? 'var(--accent)' : 'var(--border)';
             btn.style.color = DEBUG ? 'var(--accent)' : 'var(--text-secondary)';
         }
-
-        // ========== THEME TOGGLE ==========
-
-        function toggleTheme() {
-            const html = document.documentElement;
-            const current = html.getAttribute('data-theme');
-            const next = current === 'light' ? 'dark' : 'light';
-            html.setAttribute('data-theme', next === 'dark' ? '' : 'light');
-            if (next === 'dark') html.removeAttribute('data-theme');
-            document.getElementById('themeToggle').textContent = next === 'light' ? '☀️' : '🌙';
-            localStorage.setItem('flamegraph-theme', next);
-        }
-
-        // Restore saved theme
-        (function() {
-            const saved = localStorage.getItem('flamegraph-theme');
-            if (saved === 'light') {
-                document.documentElement.setAttribute('data-theme', 'light');
-                document.getElementById('themeToggle').textContent = '☀️';
-            }
-        })();
 
         let flameChart = null;
 
@@ -1082,8 +1058,20 @@
             let fileCount = 0;
             let skippedErr = 0;
             const timestamps = [];
+            const timeline = [];   // per-file {ts, leaves:{name:count}} for temporal trend analysis
             const progressEl = document.getElementById('progressText');
             log(`processFiles: received ${fileList.length} items`);
+
+            function recordTimeline(ts, stacks) {
+                if (!ts) return;
+                const leaves = {};
+                for (const st of stacks) {
+                    if (!st.length) continue;
+                    const leaf = st[0];   // parser emits leaf-first
+                    leaves[leaf] = (leaves[leaf] || 0) + 1;
+                }
+                timeline.push({ ts: ts.getTime(), leaves });
+            }
 
             for (let i = 0; i < fileList.length; i++) {
                 const file = fileList[i];
@@ -1117,7 +1105,7 @@
                                     allStacks.push(...stacks);
                                     fileCount++;
                                     const ts = parseTimestampFromFilename(name);
-                                    if (ts) timestamps.push(ts);
+                                    if (ts) { timestamps.push(ts); recordTimeline(ts, stacks); }
                                 } else {
                                     log(`zip entry ${name}: no stacks found`);
                                 }
@@ -1154,7 +1142,7 @@
                                     allStacks.push(...stacks);
                                     fileCount++;
                                     const ts = parseTimestampFromFilename(tarFile.name);
-                                    if (ts) timestamps.push(ts);
+                                    if (ts) { timestamps.push(ts); recordTimeline(ts, stacks); }
                                 }
                             }
                         } catch (e) {
@@ -1178,7 +1166,7 @@
                             allStacks.push(...stacks);
                             fileCount++;
                             const ts = parseTimestampFromFilename(filename);
-                            if (ts) timestamps.push(ts);
+                            if (ts) { timestamps.push(ts); recordTimeline(ts, stacks); }
                         } else {
                             log(`${filename}: no stacks found`);
                         }
@@ -1218,6 +1206,7 @@
             return {
                 data: hierarchy,
                 folded: folded,
+                timeline: timeline,
                 stats: {
                     files: fileCount,
                     total_stacks: allStacks.length,
@@ -1352,6 +1341,7 @@
         let currentFlamegraphData = null;
         let currentStats = null;
         let currentFoldedStacks = null;
+        let currentTimeline = [];
         let searchMatches = [];
         let searchMatchIndex = -1;
         let currentSearchTerm = '';
@@ -1428,6 +1418,7 @@
                 // Store stats and folded stacks for export
                 currentStats = { stats: data.stats, time_range: data.time_range };
                 currentFoldedStacks = data.folded;
+                currentTimeline = data.timeline || [];
 
                 // Update stats
                 document.getElementById('statFiles').textContent = data.stats.files;
@@ -1439,6 +1430,7 @@
                 }
                 document.getElementById('statsBar').classList.add('visible');
                 document.getElementById('toolbar').classList.add('visible');
+                document.getElementById('newUploadBtn').style.display = 'inline-block';
 
                 // Show skipped .err files count
                 if (data.stats.skipped_err_files > 0) {
@@ -1621,6 +1613,169 @@
             };
         }
 
+        // ========== INSIGHTS ENGINE ==========
+
+        // Leaf-state classifiers: idle waits are parked threads (usually fine);
+        // lock waits are threads stuck ACQUIRING a lock (contention — a real problem).
+        const IDLE_WAIT_RE = /^(pthread_cond_wait|pthread_cond_timedwait|epoll_wait|__poll|poll|select|pselect|nanosleep|usleep|sleep|pause|sigsuspend|sigtimedwait|accept|accept4|recv|recvfrom|recvmsg|read|inotify_read|wait4|waitpid|kevent)\b/;
+        const LOCK_WAIT_RE = /^(__lll_lock_wait|pthread_mutex_lock|pthread_rwlock_rdlock|pthread_rwlock_wrlock|futex|pthread_spin_lock|__pthread_mutex_cond_lock)\b/;
+
+        // Knowledge base of workload signatures (Splunk-flavored) mapped to
+        // plain-language guidance for support engineers. Tested against every
+        // frame of a stack, weighted by sample count.
+        const SIGNATURE_KB = [
+            { re: /PCRE|RegexMatcher|pcre_exec|pcre2/i, label: 'Regex processing',
+              advice: 'Heavy regex cost — usually search-time field extractions or badly anchored regex in props/transforms. Review extractions on the busiest sourcetypes.' },
+            { re: /zlib|deflate|inflate|compress2?\b|gzip/i, label: 'Compression',
+              advice: 'Compression overhead — common during indexing (journal.gz) or bucket ops. Check indexing volume and consider whether compression level or hardware is the constraint.' },
+            { re: /SSL_(read|write|do_handshake)|EVP_|tls/i, label: 'SSL/TLS',
+              advice: 'TLS overhead on inputs or REST. If handshakes dominate, look for connection churn (forwarders reconnecting, health probes).' },
+            { re: /BucketMover|BucketReplicator|BucketJanitor|DatabaseDirectoryManager/i, label: 'Bucket management',
+              advice: 'Bucket move/replication churn. Check for excessive small buckets, aggressive retention, or cluster fixups in flight.' },
+            { re: /SearchProcessor|SearchEvaluator|SearchOperator|DispatchSearch/i, label: 'Search execution',
+              advice: 'Search workload dominates. Correlate with audit.log for expensive/long-running searches and review scheduled search concurrency.' },
+            { re: /IndexWriter|IndexerService|JournalWriter|rawdata/i, label: 'Indexing pipeline',
+              advice: 'Indexing pipeline load. Check ingestion rate, pipeline queue fill (metrics.log), and disk I/O latency.' },
+            { re: /KVStore|mongod|WiredTiger/i, label: 'KV store',
+              advice: 'KV store activity — lookups or collection scans. Review lookup sizes and KV store health.' },
+            { re: /HttpServer|RestHandler|HTTPServer|Uri/i, label: 'REST/HTTP handling',
+              advice: 'REST/UI request load. Check for polling clients, dashboards on aggressive refresh, or API scripts.' },
+            { re: /TcpInputProcessor|S2SReceiver|CookedTcp/i, label: 'Data input (S2S)',
+              advice: 'Forwarder data input load. Check receiving queue status and forwarder output balance.' },
+        ];
+
+        function classifyLeaf(leaf) {
+            if (LOCK_WAIT_RE.test(leaf)) return 'lock';
+            if (IDLE_WAIT_RE.test(leaf)) return 'idle';
+            return 'cpu';
+        }
+
+        // Build actionable insight cards from the folded stacks (+ optional timeline).
+        function buildInsights(foldedData, total, timeline) {
+            const insights = [];
+            if (!foldedData || !foldedData.length || !total) return insights;
+
+            // --- 1. Workload split: on-CPU vs lock wait vs idle wait ---
+            let cpu = 0, lock = 0, idle = 0;
+            const lockPaths = {};
+            for (const { stack, count } of foldedData) {
+                const frames = stack.split(';');
+                const leaf = frames[frames.length - 1];
+                const cls = classifyLeaf(leaf);
+                if (cls === 'lock') {
+                    lock += count;
+                    // remember the calling context of contended locks
+                    const ctx = frames.slice(Math.max(0, frames.length - 4), frames.length - 1).join(' → ');
+                    lockPaths[ctx] = (lockPaths[ctx] || 0) + count;
+                } else if (cls === 'idle') idle += count;
+                else cpu += count;
+            }
+            const pct = (n) => (n / total * 100);
+
+            if (pct(lock) >= 5) {
+                const top = Object.entries(lockPaths).sort((a, b) => b[1] - a[1]).slice(0, 3);
+                insights.push({
+                    severity: pct(lock) >= 15 ? 'hot' : 'warn',
+                    title: `Lock contention — ${pct(lock).toFixed(1)}% of samples are waiting to acquire locks`,
+                    detail: 'Threads blocked acquiring mutexes (not idle waits). Top contended paths:<ul>' +
+                        top.map(([p, c]) => `<li><code>${escapeHtml(p)}</code> — ${(c / total * 100).toFixed(1)}%</li>`).join('') + '</ul>',
+                    suggestion: 'Contention this high usually serializes throughput. Identify the shared resource in these paths.',
+                });
+            }
+
+            // --- 2. Dominant hot path (funnel) ---
+            {
+                // Rebuild a light hierarchy walk over folded data via prefix counting
+                const prefixCounts = {};
+                for (const { stack, count } of foldedData) {
+                    const frames = stack.split(';');
+                    let prefix = '';
+                    for (let i = 0; i < frames.length; i++) {
+                        prefix = prefix ? prefix + ';' + frames[i] : frames[i];
+                        prefixCounts[prefix] = (prefixCounts[prefix] || 0) + count;
+                    }
+                }
+                // Walk down choosing the heaviest child while it keeps >= 35% of total
+                let path = [], current = '';
+                for (;;) {
+                    let best = null, bestCount = 0;
+                    for (const [prefix, c] of Object.entries(prefixCounts)) {
+                        const parent = prefix.lastIndexOf(';') >= 0 ? prefix.slice(0, prefix.lastIndexOf(';')) : '';
+                        if (parent === current && c > bestCount) { best = prefix; bestCount = c; }
+                    }
+                    if (!best || bestCount / total < 0.35) break;
+                    path.push({ name: best.slice(best.lastIndexOf(';') + 1), count: bestCount });
+                    current = best;
+                }
+                if (path.length >= 3) {
+                    const terminal = path[path.length - 1];
+                    insights.push({
+                        severity: 'info',
+                        title: `Hot path — ${(terminal.count / total * 100).toFixed(1)}% of samples flow through one call chain`,
+                        detail: `<code>${escapeHtml(path.map(p => p.name).join(' → '))}</code>`,
+                        suggestion: 'This is the dominant funnel. Zoom the flamegraph here first; anything optimised on this path affects most samples.',
+                    });
+                }
+            }
+
+            // --- 3. Workload signatures (knowledge base) ---
+            {
+                const sigCounts = new Map();
+                for (const { stack, count } of foldedData) {
+                    for (const sig of SIGNATURE_KB) {
+                        if (sig.re.test(stack)) sigCounts.set(sig, (sigCounts.get(sig) || 0) + count);
+                    }
+                }
+                const hits = [...sigCounts.entries()]
+                    .map(([sig, c]) => ({ sig, pctv: c / total * 100 }))
+                    .filter(h => h.pctv >= 5)
+                    .sort((a, b) => b.pctv - a.pctv)
+                    .slice(0, 3);
+                for (const h of hits) {
+                    insights.push({
+                        severity: h.pctv >= 25 ? 'warn' : 'info',
+                        title: `${h.sig.label} — present in ${h.pctv.toFixed(1)}% of samples`,
+                        detail: '',
+                        suggestion: h.sig.advice,
+                    });
+                }
+            }
+
+            // --- 4. Temporal trends (needs timestamped files) ---
+            if (timeline && timeline.length >= 10) {
+                const sorted = [...timeline].sort((a, b) => a.ts - b.ts);
+                const mid = Math.floor(sorted.length / 2);
+                const sum = (slice) => {
+                    const acc = {}; let t = 0;
+                    for (const f of slice) for (const [leaf, c] of Object.entries(f.leaves)) { acc[leaf] = (acc[leaf] || 0) + c; t += c; }
+                    return { acc, t };
+                };
+                const h1 = sum(sorted.slice(0, mid)), h2 = sum(sorted.slice(mid));
+                if (h1.t > 0 && h2.t > 0) {
+                    const trends = [];
+                    const leaves = new Set([...Object.keys(h1.acc), ...Object.keys(h2.acc)]);
+                    for (const leaf of leaves) {
+                        const r1 = (h1.acc[leaf] || 0) / h1.t * 100;
+                        const r2 = (h2.acc[leaf] || 0) / h2.t * 100;
+                        if (r2 >= r1 * 1.6 && r2 >= 4) trends.push({ leaf, r1, r2, dir: '↑ rising' });
+                        else if (r1 >= r2 * 1.6 && r1 >= 4) trends.push({ leaf, r1, r2, dir: '↓ falling' });
+                    }
+                    trends.sort((a, b) => Math.abs(b.r2 - b.r1) - Math.abs(a.r2 - a.r1));
+                    if (trends.length) {
+                        insights.push({
+                            severity: trends.some(t => t.dir.startsWith('↑') && classifyLeaf(t.leaf) !== 'idle') ? 'warn' : 'info',
+                            title: 'Shifting workload across the collection window',
+                            detail: '<ul>' + trends.slice(0, 4).map(t =>
+                                `<li><code>${escapeHtml(t.leaf)}</code> ${t.dir}: ${t.r1.toFixed(1)}% → ${t.r2.toFixed(1)}% of samples</li>`).join('') + '</ul>',
+                            suggestion: 'A rising function means the problem was building during collection — correlate the time range with logs/metrics. Flat profiles are steady-state.',
+                        });
+                    }
+                }
+            }
+
+            return insights;
+        }
+
         function showAnalysis(hierarchy) {
             // Collect all leaf nodes and their values
             const functionStats = {};
@@ -1675,15 +1830,38 @@
                 html += `</div>`;
             }
 
-            // Summary
-            const waitPct = waitFuncs.reduce((s, [, v]) => s + v.selfTime, 0) / totalSamples * 100;
-            const activePct = 100 - waitPct;
+            // Summary: three-way workload split (on-CPU / lock wait / idle wait)
+            let splitCpu = 0, splitLock = 0, splitIdle = 0;
+            if (currentFoldedStacks) {
+                for (const { stack, count } of currentFoldedStacks) {
+                    const frames = stack.split(';');
+                    const cls = classifyLeaf(frames[frames.length - 1]);
+                    if (cls === 'lock') splitLock += count;
+                    else if (cls === 'idle') splitIdle += count;
+                    else splitCpu += count;
+                }
+            }
             html += '<div class="analysis-section">';
             html += `<div class="analysis-summary">`;
-            html += `<span class="analysis-badge active">On-CPU: ${activePct.toFixed(1)}%</span>`;
-            html += `<span class="analysis-badge idle">Waiting/Idle: ${waitPct.toFixed(1)}%</span>`;
+            html += `<span class="analysis-badge active">On-CPU: ${(splitCpu / totalSamples * 100).toFixed(1)}%</span>`;
+            html += `<span class="analysis-badge lock">Lock wait: ${(splitLock / totalSamples * 100).toFixed(1)}%</span>`;
+            html += `<span class="analysis-badge idle">Idle wait: ${(splitIdle / totalSamples * 100).toFixed(1)}%</span>`;
             html += `</div>`;
             html += '</div>';
+
+            // Insight cards (contention, hot path, signatures, temporal trends)
+            const insights = buildInsights(currentFoldedStacks, totalSamples, currentTimeline);
+            if (insights.length) {
+                html += '<div class="analysis-section"><h4>Insights</h4>';
+                for (const ins of insights) {
+                    html += `<div class="insight-card ${ins.severity}">`;
+                    html += `<div class="bc-headline">${ins.title}</div>`;
+                    if (ins.detail) html += `<div class="bc-detail">${ins.detail}</div>`;
+                    html += `<div class="bc-suggestion">→ ${ins.suggestion}</div>`;
+                    html += `</div>`;
+                }
+                html += '</div>';
+            }
 
             // Top active functions
             if (activeFuncs.length > 0) {
@@ -1959,12 +2137,22 @@
             return r.text();
         }
 
+        async function fetchBase64SameOrigin(url) {
+            const r = await fetch(url);
+            if (!r.ok) throw new Error('fetch failed: ' + url);
+            const bytes = new Uint8Array(await r.arrayBuffer());
+            let bin = '';
+            for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+            return btoa(bin);
+        }
+
         async function downloadInteractiveHTML() {
             if (!currentFlamegraphData) return;
 
             // Try to inline the vendored libraries so the export is fully self-contained
             // and works offline. Fall back to SRI-pinned CDN if fetch is unavailable (file://).
             let inlineLibs = null;
+            let fontInline = '';   // Geist inlined as base64 so the export keeps the typeface offline
             try {
                 const [d3js, fgjs, fgcss] = await Promise.all([
                     fetchTextSameOrigin('vendor/d3.v7.min.js'),
@@ -1976,6 +2164,19 @@
                     `<style>${fgcss.replace(/<\/style/gi, '<\\/style')}</style>\n` +
                     `<script>${guardJs(d3js)}<\/script>\n` +
                     `<script>${guardJs(fgjs)}<\/script>`;
+                try {
+                    const [sansB64, monoB64] = await Promise.all([
+                        fetchBase64SameOrigin('vendor/fonts/Geist-Variable.woff2'),
+                        fetchBase64SameOrigin('vendor/fonts/GeistMono-Variable.woff2'),
+                    ]);
+                    fontInline =
+                        `<style>` +
+                        `@font-face{font-family:'Geist';src:url(data:font/woff2;base64,${sansB64}) format('woff2');font-weight:100 900;font-style:normal;font-display:swap}` +
+                        `@font-face{font-family:'Geist Mono';src:url(data:font/woff2;base64,${monoB64}) format('woff2');font-weight:100 900;font-style:normal;font-display:swap}` +
+                        `</style>`;
+                } catch (fe) {
+                    log('export: font inline failed, falling back to system fonts —', fe.message);
+                }
             } catch (e) {
                 log('export: inlining vendored libs failed, using SRI CDN fallback —', e.message);
                 inlineLibs =
@@ -2029,9 +2230,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Flamegraph</title>
 ${inlineLibs}
+${fontInline}
 ${tokenBlock}
 <style>
 /* Exported viewer styles — consume the inlined #dsTokens design tokens above. */
+body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; letter-spacing: -0.011em; }
+.header h1 { letter-spacing: -0.03em; }
+.analysis-panel h3, .stacks-panel h3, .guide-panel h3 { letter-spacing: -0.02em; }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: var(--font-sans); background: var(--bg-primary); color: var(--text-primary); }
 .header { background: var(--bg-secondary); border-bottom: 2px solid var(--border); padding: 16px 24px; }
@@ -2063,6 +2268,23 @@ body { font-family: var(--font-sans); background: var(--bg-primary); color: var(
 .analysis-badge { padding: 6px 14px; border-radius: var(--radius-md); font-size: var(--fs-md); font-weight: 600; }
 .analysis-badge.active { background: var(--badge-active-bg); color: var(--badge-active-text); }
 .analysis-badge.idle { background: var(--badge-idle-bg); color: var(--badge-idle-text); }
+.analysis-badge.lock { background: #2a1a05; color: #ffab40; }
+.insight-card { border-left: 4px solid var(--info); background: var(--bg-primary); border-radius: var(--radius-md); padding: 12px 16px; margin-bottom: 10px; }
+.insight-card.info { border-color: var(--info); }
+.insight-card.warn { border-color: var(--highlight); }
+.insight-card.hot { border-color: var(--error-border); }
+.insight-card ul { margin: 6px 0 0 18px; }
+.insight-card li { margin-bottom: 3px; font-size: var(--fs-sm); color: var(--text-secondary); }
+.insight-card code { background: var(--code-bg); padding: 1px 5px; border-radius: var(--radius-xs); font-size: var(--fs-xs); color: var(--code-text); font-family: var(--font-mono); }
+.bottleneck-card { border-left: 4px solid var(--highlight); background: var(--bg-primary); border-radius: var(--radius-md); padding: 14px 16px; margin-bottom: 20px; }
+.bottleneck-card.idle { border-color: var(--info); }
+.bottleneck-card.wait { border-color: var(--highlight); }
+.bottleneck-card.cpu { border-color: var(--error-border); }
+.bottleneck-card .bc-label { font-size: var(--fs-2xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; color: var(--text-muted); }
+.bottleneck-card .bc-headline, .insight-card .bc-headline { font-size: var(--fs-lg); font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
+.bottleneck-card .bc-detail, .insight-card .bc-detail { font-size: var(--fs-sm); color: var(--text-secondary); margin-bottom: 6px; }
+.bottleneck-card .bc-detail code { background: var(--code-bg); padding: 1px 5px; border-radius: var(--radius-xs); font-size: var(--fs-xs); color: var(--code-text); }
+.bottleneck-card .bc-suggestion, .insight-card .bc-suggestion { font-size: var(--fs-xs); color: var(--text-muted); font-style: italic; }
 .analysis-table { width: 100%; max-width: 700px; border-collapse: collapse; font-size: var(--fs-sm); }
 .analysis-table th { text-align: left; color: var(--text-muted); padding: 6px 12px; border-bottom: 1px solid var(--border); font-weight: 500; }
 .analysis-table td { padding: 5px 12px; border-bottom: 1px solid var(--border-light); }
@@ -2238,6 +2460,7 @@ document.querySelectorAll('.guide-panel h3').forEach(function(h){
             });
             const mw = document.getElementById('minWidthInput');
             if (mw) mw.value = '0';
+            document.getElementById('newUploadBtn').style.display = 'none';
         }
 
         function showError(msg) {
