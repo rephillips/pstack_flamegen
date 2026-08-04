@@ -2311,6 +2311,7 @@
 
             const dataJson = jsonForScript(currentFlamegraphData);
             const foldedJson = jsonForScript(currentFoldedStacks || []);
+            const bottleneckJson = jsonForScript(currentBottleneckLeaf || null);
             const total = totalSamples;
             const s = currentStats || {};
             const stats = s.stats || {};
@@ -2371,9 +2372,14 @@ body { font-family: var(--font-sans); background: var(--bg-primary); color: var(
 .btn:hover { background: var(--bg-hover); border-color: var(--accent); }
 .btn.active { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
 .matched-pct { color: var(--accent-light); font-weight: 600; font-size: var(--fs-sm); }
-#chart { background: var(--flamegraph-bg); }
+#chart { background: var(--flamegraph-bg); position: relative; }
 #chart .d3-flame-graph-label { fill: var(--text-primary) !important; }
 #chart .d3-flame-graph rect { stroke: var(--flamegraph-stroke); stroke-width: 0.5px; }
+.bottleneck-arrow { position: absolute; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -100%); z-index: 10; cursor: pointer; user-select: none; }
+.bottleneck-arrow.flip { transform: translate(-50%, 0); }
+.ba-label { font-size: var(--fs-2xs); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); background: rgba(0,0,0,0.85); border: 1px solid var(--accent); padding: 2px 8px; border-radius: var(--radius-sm); white-space: nowrap; text-shadow: 0 0 8px rgba(52,255,119,0.5); }
+.ba-arrow { color: var(--accent); font-size: var(--fs-md); line-height: 1; animation: ba-bounce 1.2s ease-in-out infinite; text-shadow: 0 0 8px rgba(52,255,119,0.6); }
+@keyframes ba-bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(4px); } }
 .status { background: var(--status-bg); border-top: 1px solid var(--status-border); padding: 8px 24px; font-size: var(--fs-sm); font-family: var(--font-mono); color: var(--text-secondary); position: sticky; bottom: 0; display: flex; gap: 20px; }
 .status .fn { color: var(--accent); font-weight: 600; }
 .status .s { color: var(--highlight); }
@@ -2465,6 +2471,7 @@ body { font-family: var(--font-sans); background: var(--bg-primary); color: var(
 <script>
 var data = ${dataJson};
 var folded = ${foldedJson};
+var bottleneckLeaf = ${bottleneckJson};
 var total = ${total};
 var inverted = false;
 function warmColor(name){var h=5381;for(var i=0;i<name.length;i++){h=((h<<5)+h+name.charCodeAt(i))&0xffffffff;}var v1=((h>>>0)%1000)/1000,v2=((h>>>10)%1000)/1000;return 'rgb('+(205+Math.round(50*v1))+','+Math.round(220*v2)+','+Math.round(55*v2)+')';}
@@ -2499,8 +2506,48 @@ document.getElementById('search').addEventListener('input',function(e){
   if(t){chart.search(t);document.getElementById('matched').textContent='Matched: '+matchedPct(t).toFixed(1)+'%';}
   else{chart.clear();document.getElementById('matched').textContent='';}
 });
-function toggleInv(){inverted=!inverted;document.getElementById('invBtn').classList.toggle('active',inverted);chart.inverted(inverted);d3.select('#chart').datum(data).call(chart);setTimeout(bindHover,500);}
-window.onresize=function(){chart.width(document.body.clientWidth);d3.select('#chart').datum(data).call(chart)};
+function toggleInv(){inverted=!inverted;document.getElementById('invBtn').classList.toggle('active',inverted);chart.inverted(inverted);d3.select('#chart').datum(data).call(chart);setTimeout(bindHover,500);setTimeout(positionArrow,500);}
+window.onresize=function(){chart.width(document.body.clientWidth);d3.select('#chart').datum(data).call(chart);setTimeout(positionArrow,300);};
+// Bottleneck arrow — anchored to the widest frame of the diagnosed bottleneck
+function widestRect(name){
+  var best=null,bestW=4;
+  document.querySelectorAll('#chart rect').forEach(function(r){
+    var d=d3.select(r).datum();
+    if(d&&d.data&&d.data.name===name){var w=r.getBoundingClientRect().width;if(w>bestW){bestW=w;best=r;}}
+  });
+  return best;
+}
+function positionArrow(){
+  var c=document.getElementById('chart');
+  var m=document.getElementById('bottleneckArrow');
+  if(!bottleneckLeaf){if(m)m.remove();return;}
+  var rect=widestRect(bottleneckLeaf);
+  if(!rect){if(m)m.style.display='none';return;}
+  if(!m){
+    m=document.createElement('div');
+    m.id='bottleneckArrow';m.className='bottleneck-arrow';
+    m.title='Likely bottleneck — click to zoom to this frame';
+    m.addEventListener('click',function(e){
+      e.stopPropagation();
+      var r=widestRect(bottleneckLeaf);
+      if(r)r.dispatchEvent(new MouseEvent('click',{bubbles:true}));
+      setTimeout(positionArrow,500);
+    });
+    c.appendChild(m);
+  }
+  m.style.display='flex';
+  var cb=c.getBoundingClientRect(),rb=rect.getBoundingClientRect();
+  var cx=Math.max(70,Math.min(rb.left+rb.width/2-cb.left,cb.width-70));
+  var flip=(rb.top-cb.top)<44;
+  m.innerHTML=flip
+    ? '<span class="ba-arrow">▲</span><span class="ba-label">Likely bottleneck</span>'
+    : '<span class="ba-label">Likely bottleneck</span><span class="ba-arrow">▼</span>';
+  m.classList.toggle('flip',flip);
+  m.style.left=cx+'px';
+  m.style.top=(flip?rb.bottom-cb.top+4:rb.top-cb.top-4)+'px';
+}
+setTimeout(positionArrow,800);
+document.getElementById('chart').addEventListener('click',function(){setTimeout(positionArrow,500);});
 // Stacks toggle
 document.querySelectorAll('.stacks-panel h3').forEach(function(h){
   h.addEventListener('click',function(){
