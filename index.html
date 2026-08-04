@@ -58,10 +58,11 @@
             --text-muted: #737373;
             --text-dim: #525252;
             --text-placeholder: #404040;
-            --accent: #00ff9d;          /* neon green */
-            --accent-hover: #5affc0;
-            --accent-light: #8affce;
-            --hero: #34ff77;            /* brighter electric neon green — hero title only */
+            /* Single green identity — same hue as the hero title everywhere
+               (buttons, badges, borders, code). Hover/light are tints of it. */
+            --accent: #34ff77;          /* electric neon green — the ONE green */
+            --accent-hover: #6dff9e;
+            --accent-light: #a3ffc4;
             --highlight: #ffab40;       /* amber — mono function names / sample counts */
             --info: #40c4ff;
             --error-bg: #2a0f0f;
@@ -75,11 +76,11 @@
             --tooltip-text: #ededed;
             --tooltip-border: #262626;
             --badge-active-bg: #052e1c;
-            --badge-active-text: #00ff9d;
+            --badge-active-text: var(--accent);
             --badge-idle-bg: #0a1a2e;
             --badge-idle-text: #7db8ff;
             --code-bg: #161616;
-            --code-text: #00ff9d;       /* terminal-green inline code */
+            --code-text: var(--accent);  /* terminal-green inline code */
             --spinner-track: #262626;
 
             /* --- flamegraph frame palette (by code type; theme-agnostic) --- */
@@ -159,7 +160,7 @@
 
         .header h1 {
             font-size: var(--fs-3xl);
-            color: var(--hero);
+            color: var(--accent);
             font-weight: 600;
             letter-spacing: var(--tracking-tighter);
             text-shadow: 0 0 22px rgba(52, 255, 119, 0.55), 0 0 4px rgba(52, 255, 119, 0.35);
