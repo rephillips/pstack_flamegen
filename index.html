@@ -280,6 +280,43 @@
             min-height: 400px;
             width: 100%;
             overflow-x: hidden;
+            position: relative;   /* anchor for the bottleneck arrow */
+        }
+
+        .bottleneck-arrow {
+            position: absolute;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transform: translate(-50%, -100%);
+            z-index: 10;
+            cursor: pointer;
+            user-select: none;
+        }
+        .bottleneck-arrow.flip { transform: translate(-50%, 0); }
+        .ba-label {
+            font-size: var(--fs-2xs);
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--accent);
+            background: rgba(0, 0, 0, 0.85);
+            border: 1px solid var(--accent);
+            padding: 2px 8px;
+            border-radius: var(--radius-sm);
+            white-space: nowrap;
+            text-shadow: 0 0 8px rgba(52, 255, 119, 0.5);
+        }
+        .ba-arrow {
+            color: var(--accent);
+            font-size: var(--fs-md);
+            line-height: 1;
+            animation: ba-bounce 1.2s ease-in-out infinite;
+            text-shadow: 0 0 8px rgba(52, 255, 119, 0.6);
+        }
+        @keyframes ba-bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(4px); }
         }
 
         #flamegraph-container.visible { display: block; }
@@ -681,6 +718,7 @@
         <span class="stat">Latest: <strong id="timeLatest">—</strong></span>
         <span class="stat">Duration: <strong id="timeDuration">—</strong></span>
         <span class="stat">Samples: <strong id="timeSamples">—</strong></span>
+        <span class="stat" id="timeApproxNote" style="display:none" title="Filenames had no collect-stacks.sh timestamps, so file modification times were used instead">≈ approximate (from file times)</span>
     </div>
 
     <div class="toolbar" id="toolbar">
@@ -1059,6 +1097,7 @@
             let fileCount = 0;
             let skippedErr = 0;
             const timestamps = [];
+            const approxTimestamps = [];  // fallback: file mtimes / zip entry dates when filenames lack timestamps
             const timeline = [];   // per-file {ts, leaves:{name:count}} for temporal trend analysis
             const progressEl = document.getElementById('progressText');
             log(`processFiles: received ${fileList.length} items`);
@@ -1107,6 +1146,7 @@
                                     fileCount++;
                                     const ts = parseTimestampFromFilename(name);
                                     if (ts) { timestamps.push(ts); recordTimeline(ts, stacks); }
+                                    else if (zipEntry.date) { approxTimestamps.push(zipEntry.date); recordTimeline(zipEntry.date, stacks); }
                                 } else {
                                     log(`zip entry ${name}: no stacks found`);
                                 }
@@ -1168,6 +1208,10 @@
                             fileCount++;
                             const ts = parseTimestampFromFilename(filename);
                             if (ts) { timestamps.push(ts); recordTimeline(ts, stacks); }
+                            else if (file.lastModified) {
+                                const mts = new Date(file.lastModified);
+                                approxTimestamps.push(mts); recordTimeline(mts, stacks);
+                            }
                         } else {
                             log(`${filename}: no stacks found`);
                         }
@@ -1189,18 +1233,22 @@
             const hierarchy = foldedToD3Hierarchy(folded);
             log(`folding + hierarchy built in ${(performance.now() - t0).toFixed(1)}ms, ${folded.length} unique stacks`);
 
-            // Build time range
+            // Build time range. Prefer real timestamps from collect-stacks.sh
+            // filenames; fall back to file modification times (marked approximate).
             let timeRange = null;
-            if (timestamps.length > 0) {
-                timestamps.sort((a, b) => a - b);
-                const earliest = timestamps[0];
-                const latest = timestamps[timestamps.length - 1];
+            const approximate = timestamps.length === 0 && approxTimestamps.length >= 2;
+            const effTimestamps = timestamps.length > 0 ? timestamps : approxTimestamps;
+            if (effTimestamps.length > 0) {
+                effTimestamps.sort((a, b) => a - b);
+                const earliest = effTimestamps[0];
+                const latest = effTimestamps[effTimestamps.length - 1];
                 const durationSecs = Math.round((latest - earliest) / 1000);
                 timeRange = {
                     earliest: formatTimestamp(earliest),
                     latest: formatTimestamp(latest),
                     duration_seconds: durationSecs,
-                    sample_count: timestamps.length,
+                    sample_count: effTimestamps.length,
+                    approximate: approximate,
                 };
             }
 
@@ -1343,6 +1391,62 @@
         let currentStats = null;
         let currentFoldedStacks = null;
         let currentTimeline = [];
+        let currentBottleneckLeaf = null;
+
+        // ========== BOTTLENECK ARROW ==========
+        // A glowing marker anchored to the widest rendered frame of the likely
+        // bottleneck function. Repositioned after any re-render/zoom/resize.
+
+        function findWidestRectFor(name) {
+            let best = null, bestW = 4; // ignore slivers under 4px
+            document.querySelectorAll('#flamegraph-container rect').forEach(r => {
+                const d = d3.select(r).datum();
+                if (d && d.data && d.data.name === name) {
+                    const w = r.getBoundingClientRect().width;
+                    if (w > bestW) { bestW = w; best = r; }
+                }
+            });
+            return best;
+        }
+
+        function positionBottleneckArrow() {
+            const container = document.getElementById('flamegraph-container');
+            let marker = document.getElementById('bottleneckArrow');
+            if (!currentBottleneckLeaf || !container.classList.contains('visible')) {
+                if (marker) marker.remove();
+                return;
+            }
+            const rect = findWidestRectFor(currentBottleneckLeaf);
+            if (!rect) { if (marker) marker.style.display = 'none'; return; }
+
+            if (!marker) {
+                marker = document.createElement('div');
+                marker.id = 'bottleneckArrow';
+                marker.className = 'bottleneck-arrow';
+                marker.title = 'Likely bottleneck — click to zoom to this frame';
+                marker.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const r = findWidestRectFor(currentBottleneckLeaf);
+                    if (r) r.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                    setTimeout(positionBottleneckArrow, 500);
+                });
+                container.appendChild(marker);
+            }
+            marker.style.display = 'flex';
+
+            const cb = container.getBoundingClientRect();
+            const rb = rect.getBoundingClientRect();
+            const cx = Math.max(70, Math.min(rb.left + rb.width / 2 - cb.left, cb.width - 70));
+            // Leaves sit at the TOP of a normal flamegraph — if the target is near
+            // the container top, place the marker below it pointing up instead.
+            const flip = (rb.top - cb.top) < 44;
+            marker.innerHTML = flip
+                ? `<span class="ba-arrow">▲</span><span class="ba-label">Likely bottleneck</span>`
+                : `<span class="ba-label">Likely bottleneck</span><span class="ba-arrow">▼</span>`;
+            marker.classList.toggle('flip', flip);
+            marker.style.left = cx + 'px';
+            marker.style.top = (flip ? rb.bottom - cb.top + 4 : rb.top - cb.top - 4) + 'px';
+        }
         let searchMatches = [];
         let searchMatchIndex = -1;
         let currentSearchTerm = '';
@@ -1455,6 +1559,7 @@
                         durStr = Math.floor(secs / 3600) + 'h ' + Math.floor((secs % 3600) / 60) + 'm ' + (secs % 60) + 's';
                     }
                     document.getElementById('timeDuration').textContent = durStr;
+                    document.getElementById('timeApproxNote').style.display = data.time_range.approximate ? 'inline' : 'none';
                     document.getElementById('timeBar').style.display = 'flex';
                 }
 
@@ -1514,6 +1619,11 @@
             if (currentFoldedStacks) showTopStacks(currentFoldedStacks);
             showGuide();
 
+            // Place the bottleneck arrow once the initial render settles, and
+            // re-place it after any zoom (click) — zoom transition is 300ms.
+            setTimeout(positionBottleneckArrow, 700);
+            container.onclick = () => setTimeout(positionBottleneckArrow, 500);
+
             // Re-fit after panels are added — they may trigger a scrollbar that narrows the viewport
             requestAnimationFrame(() => {
                 const w = chartWidth();
@@ -1531,6 +1641,7 @@
                     if (flameChart) {
                         flameChart.width(chartWidth());
                         d3.select('#flamegraph-container').datum(data).call(flameChart);
+                        setTimeout(positionBottleneckArrow, 250);
                     }
                 }, 100);
             });
@@ -1580,6 +1691,7 @@
             if (waitPattern.test(topLeaf)) {
                 const mostly = parseFloat(waitPct) > 60;
                 return {
+                    leaf: topLeaf,
                     type: 'idle',
                     headline: mostly
                         ? `Process is mostly idle — ${waitPct}% of samples are waiting`
@@ -1592,6 +1704,7 @@
             }
             if (ioPattern.test(topLeaf)) {
                 return {
+                    leaf: topLeaf,
                     type: 'wait',
                     headline: `I/O wait — ${topPct}% of samples blocked in <code>${escapeHtml(topLeaf)}</code>`,
                     detail: `Threads are stalled waiting for I/O${callerStr}.`,
@@ -1600,6 +1713,7 @@
             }
             if (memPattern.test(topLeaf)) {
                 return {
+                    leaf: topLeaf,
                     type: 'wait',
                     headline: `Memory pressure — ${topPct}% of samples in <code>${escapeHtml(topLeaf)}</code>`,
                     detail: `Heavy allocation/deallocation activity${callerStr}.`,
@@ -1607,6 +1721,7 @@
                 };
             }
             return {
+                leaf: topLeaf,
                 type: 'cpu',
                 headline: `CPU bottleneck — ${topPct}% of samples in <code>${escapeHtml(topLeaf)}</code>`,
                 detail: `This is the hottest function in the profile${callerStr}.`,
@@ -1822,6 +1937,7 @@
 
             // Likely bottleneck card
             const bottleneck = findLikelyBottleneck(currentFoldedStacks, totalSamples);
+            currentBottleneckLeaf = bottleneck ? bottleneck.leaf : null;
             if (bottleneck) {
                 html += `<div class="bottleneck-card ${bottleneck.type}">`;
                 html += `<div class="bc-label">🔍 Likely Bottleneck</div>`;
@@ -2111,6 +2227,7 @@
                 flameChart.inverted(invertedMode);
                 d3.select('#flamegraph-container').datum(currentFlamegraphData).call(flameChart);
                 if (currentSearchTerm) runSearch(currentSearchTerm);
+                setTimeout(positionBottleneckArrow, 450);
             }
         }
 
@@ -2120,6 +2237,7 @@
                 flameChart.minFrameSize(minFrameSize);
                 d3.select('#flamegraph-container').datum(currentFlamegraphData).call(flameChart);
                 if (currentSearchTerm) runSearch(currentSearchTerm);
+                setTimeout(positionBottleneckArrow, 450);
             }
         }
 
@@ -2450,6 +2568,8 @@ document.querySelectorAll('.guide-panel h3').forEach(function(h){
             currentFlamegraphData = null;
             currentStats = null;
             currentFoldedStacks = null;
+            currentTimeline = [];
+            currentBottleneckLeaf = null;
             // Reset view modes to defaults
             invertedMode = false;
             minFrameSize = 0;
