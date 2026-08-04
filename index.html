@@ -406,6 +406,38 @@
         .search-result-bar.visible { display: block; }
         .search-result-bar strong { color: var(--highlight); }
 
+        /* Zoom breadcrumb bar — appears when drilled into a subtree */
+        .zoom-bar {
+            display: none;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 8px 24px;
+            font-size: var(--fs-sm);
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .zoom-bar.visible { display: flex; }
+        .zb-label { color: var(--text-muted); margin-right: 4px; }
+        .crumb {
+            background: none;
+            border: 1px solid transparent;
+            color: var(--info);
+            cursor: pointer;
+            font-family: var(--font-mono);
+            font-size: var(--fs-xs);
+            padding: 2px 6px;
+            border-radius: var(--radius-sm);
+            max-width: 220px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .crumb:hover { border-color: var(--accent); color: var(--accent); }
+        .crumb.current { color: var(--accent); font-weight: 600; }
+        .zb-sep { color: var(--text-dim); }
+        .zb-reset { margin-left: auto; padding: 4px 12px; font-size: var(--fs-xs); }
+
         .analysis-panel {
             background: var(--bg-secondary);
             padding: 24px;
@@ -754,6 +786,8 @@
     <div class="error-msg" id="errorMsg"></div>
 
     <div class="search-result-bar" id="searchResultBar"></div>
+
+    <div class="zoom-bar" id="zoomBar"></div>
 
     <div id="flamegraph-container"></div>
 
@@ -1475,6 +1509,8 @@
             } else if (e.ctrlKey && e.key.toLowerCase() === 'i') {
                 e.preventDefault();
                 toggleCase();
+            } else if (e.key === 'Escape') {
+                resetZoom();
             }
         });
 
@@ -1584,6 +1620,7 @@
             const container = document.getElementById('flamegraph-container');
             container.innerHTML = '';
             container.classList.add('visible');
+            clearZoomState();
 
             totalSamples = data.value || 0;
             currentFlamegraphData = data;
@@ -1604,6 +1641,7 @@
                 .selfValue(false)
                 .inverted(invertedMode)
                 .minFrameSize(minFrameSize)
+                .onClick(handleFrameClick)
                 .setColorMapper(flameColorMapper)
                 .setSearchMatch(searchMatchFn);
 
@@ -1650,6 +1688,7 @@
                     if (flameChart) {
                         flameChart.width(chartWidth());
                         d3.select('#flamegraph-container').datum(data).call(flameChart);
+                        clearZoomState();
                         setTimeout(positionBottleneckArrow, 250);
                     }
                 }, 100);
@@ -2187,8 +2226,60 @@
             if (el) el.classList.toggle('visible');
         }
 
+        // ========== ZOOM BREADCRUMBS ==========
+        // Track the node the user zoomed into and render a clickable path
+        // (all › main › …) so backing out is one click — or Esc.
+
+        let currentZoomNode = null;
+        let zoomPath = [];
+
+        function handleFrameClick(d) {
+            currentZoomNode = (d && d.data && d.data.name !== 'all') ? d : null;
+            renderZoomBar();
+        }
+
+        function renderZoomBar() {
+            const bar = document.getElementById('zoomBar');
+            if (!currentZoomNode) {
+                bar.classList.remove('visible');
+                bar.innerHTML = '';
+                zoomPath = [];
+                return;
+            }
+            zoomPath = [];
+            let n = currentZoomNode;
+            while (n) { zoomPath.unshift(n); n = n.parent; }
+            let html = '<span class="zb-label">Zoomed:</span>';
+            zoomPath.forEach((node, i) => {
+                const name = node.data.name;
+                const last = i === zoomPath.length - 1;
+                html += `<button class="crumb${last ? ' current' : ''}" onclick="zoomToCrumb(${i})" title="${escapeHtml(name)}">${escapeHtml(name)}</button>`;
+                if (!last) html += '<span class="zb-sep">›</span>';
+            });
+            html += `<button class="btn zb-reset" onclick="resetZoom()">⤺ Reset zoom (Esc)</button>`;
+            bar.innerHTML = html;
+            bar.classList.add('visible');
+        }
+
+        function zoomToCrumb(i) {
+            const node = zoomPath[i];
+            if (!node || !flameChart) return;
+            if (!node.parent) { resetZoom(); return; }
+            flameChart.zoomTo(node);
+            currentZoomNode = node;
+            renderZoomBar();
+            setTimeout(positionBottleneckArrow, 500);
+        }
+
+        function clearZoomState() {
+            currentZoomNode = null;
+            renderZoomBar();
+        }
+
         function resetZoom() {
             if (flameChart) flameChart.resetZoom();
+            clearZoomState();
+            setTimeout(positionBottleneckArrow, 500);
         }
 
         function clearSearch() {
@@ -2236,6 +2327,7 @@
                 flameChart.inverted(invertedMode);
                 d3.select('#flamegraph-container').datum(currentFlamegraphData).call(flameChart);
                 if (currentSearchTerm) runSearch(currentSearchTerm);
+                clearZoomState();
                 setTimeout(positionBottleneckArrow, 450);
             }
         }
@@ -2246,6 +2338,7 @@
                 flameChart.minFrameSize(minFrameSize);
                 d3.select('#flamegraph-container').datum(currentFlamegraphData).call(flameChart);
                 if (currentSearchTerm) runSearch(currentSearchTerm);
+                clearZoomState();
                 setTimeout(positionBottleneckArrow, 450);
             }
         }
@@ -2384,6 +2477,13 @@ body { font-family: var(--font-sans); background: var(--bg-primary); color: var(
 #chart { background: var(--flamegraph-bg); position: relative; }
 #chart .d3-flame-graph-label { fill: var(--text-primary) !important; }
 #chart .d3-flame-graph rect { stroke: var(--flamegraph-stroke); stroke-width: 0.5px; }
+.zoom-bar { display: none; background: var(--bg-secondary); border-bottom: 1px solid var(--border); padding: 8px 24px; font-size: var(--fs-sm); align-items: center; gap: 6px; flex-wrap: wrap; }
+.zb-label { color: var(--text-muted); margin-right: 4px; }
+.crumb { background: none; border: 1px solid transparent; color: var(--info); cursor: pointer; font-family: var(--font-mono); font-size: var(--fs-xs); padding: 2px 6px; border-radius: var(--radius-sm); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crumb:hover { border-color: var(--accent); color: var(--accent); }
+.crumb.current { color: var(--accent); font-weight: 600; }
+.zb-sep { color: var(--text-dim); }
+.zb-reset { margin-left: auto; padding: 4px 12px; font-size: var(--fs-xs); }
 .bottleneck-arrow { position: absolute; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -100%); z-index: 10; cursor: pointer; user-select: none; }
 .bottleneck-arrow.flip { transform: translate(-50%, 0); }
 .ba-label { font-size: var(--fs-2xs); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); background: rgba(0,0,0,0.85); border: 1px solid var(--accent); padding: 2px 8px; border-radius: var(--radius-sm); white-space: nowrap; text-shadow: 0 0 8px rgba(52,255,119,0.5); }
@@ -2463,11 +2563,12 @@ body { font-family: var(--font-sans); background: var(--bg-primary); color: var(
 </div>
 <div class="toolbar">
   <input type="text" id="search" placeholder="Search functions... (regex supported)">
-  <button class="btn" onclick="chart.resetZoom()">Reset Zoom</button>
+  <button class="btn" onclick="zreset()">Reset Zoom</button>
   <button class="btn" onclick="document.getElementById('search').value='';chart.clear();document.getElementById('matched').textContent=''">Clear</button>
   <button class="btn" id="invBtn" onclick="toggleInv()">🧊 Icicle</button>
   <span id="matched" class="matched-pct"></span>
 </div>
+<div class="zoom-bar" id="zoomBar"></div>
 <div id="chart"></div>
 <div class="status">
   <span class="fn" id="sf">-</span>
@@ -2494,7 +2595,27 @@ var cats=[
 function colorMapper(d){if(d&&d.highlight)return '#e600e6';var n=(d&&d.data&&d.data.name)||'';if(n==='all'||n==='root')return '#4a4a5e';for(var i=0;i<cats.length;i++){if(cats[i].re.test(n))return cats[i].c;}return warmColor(n);}
 function tester(t){try{var re=new RegExp(t,'i');return function(n){return re.test(n);};}catch(e){var l=t.toLowerCase();return function(n){return n.toLowerCase().indexOf(l)>=0;};}}
 function matchedPct(t){if(!t||!total)return 0;var f=tester(t),m=0;for(var i=0;i<folded.length;i++){var fr=folded[i].stack.split(';');for(var j=0;j<fr.length;j++){if(f(fr[j])){m+=folded[i].count;break;}}}return (m/total*100);}
-function build(){return flamegraph().width(document.body.clientWidth).cellHeight(18).transitionDuration(300).sort(true).title('').selfValue(false).inverted(inverted).setColorMapper(colorMapper).setSearchMatch(function(d,t){return tester(t)((d&&d.data&&d.data.name)||'');});}
+function build(){return flamegraph().width(document.body.clientWidth).cellHeight(18).transitionDuration(300).sort(true).title('').selfValue(false).inverted(inverted).onClick(zclick).setColorMapper(colorMapper).setSearchMatch(function(d,t){return tester(t)((d&&d.data&&d.data.name)||'');});}
+// Zoom breadcrumbs — click a crumb to jump back, Esc to reset
+var zn=null,zp=[];
+function zesc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function zclick(d){zn=(d&&d.data&&d.data.name!=='all')?d:null;zbar();}
+function zbar(){
+  var b=document.getElementById('zoomBar');
+  if(!zn){b.style.display='none';b.innerHTML='';zp=[];return;}
+  zp=[];var n=zn;while(n){zp.unshift(n);n=n.parent;}
+  var h='<span class="zb-label">Zoomed:</span>';
+  for(var i=0;i<zp.length;i++){
+    var nm=zp[i].data.name,last=i===zp.length-1;
+    h+='<button class="crumb'+(last?' current':'')+'" onclick="zcrumb('+i+')" title="'+zesc(nm)+'">'+zesc(nm)+'</button>';
+    if(!last)h+='<span class="zb-sep">›</span>';
+  }
+  h+='<button class="btn zb-reset" onclick="zreset()">⤺ Reset zoom (Esc)</button>';
+  b.innerHTML=h;b.style.display='flex';
+}
+function zcrumb(i){var n=zp[i];if(!n)return;if(!n.parent){zreset();return;}chart.zoomTo(n);zn=n;zbar();setTimeout(positionArrow,500);}
+function zreset(){chart.resetZoom();zn=null;zbar();setTimeout(positionArrow,500);}
+document.addEventListener('keydown',function(e){if(e.key==='Escape')zreset();});
 var chart = build();
 d3.select('#chart').datum(data).call(chart);
 function bindHover(){
@@ -2515,7 +2636,7 @@ document.getElementById('search').addEventListener('input',function(e){
   if(t){chart.search(t);document.getElementById('matched').textContent='Matched: '+matchedPct(t).toFixed(1)+'%';}
   else{chart.clear();document.getElementById('matched').textContent='';}
 });
-function toggleInv(){inverted=!inverted;document.getElementById('invBtn').classList.toggle('active',inverted);chart.inverted(inverted);d3.select('#chart').datum(data).call(chart);setTimeout(bindHover,500);setTimeout(positionArrow,500);}
+function toggleInv(){inverted=!inverted;document.getElementById('invBtn').classList.toggle('active',inverted);chart.inverted(inverted);d3.select('#chart').datum(data).call(chart);zn=null;zbar();setTimeout(bindHover,500);setTimeout(positionArrow,500);}
 window.onresize=function(){chart.width(document.body.clientWidth);d3.select('#chart').datum(data).call(chart);setTimeout(positionArrow,300);};
 // Bottleneck arrow — anchored to the widest frame of the diagnosed bottleneck
 function widestRect(name){
@@ -2627,6 +2748,7 @@ document.querySelectorAll('.guide-panel h3').forEach(function(h){
             currentFoldedStacks = null;
             currentTimeline = [];
             currentBottleneckLeaf = null;
+            clearZoomState();
             // Reset view modes to defaults
             invertedMode = false;
             minFrameSize = 0;
